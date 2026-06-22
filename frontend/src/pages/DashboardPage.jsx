@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Users, TrendingUp, CreditCard, AlertTriangle, Calendar, Flame, GraduationCap, Bot } from 'lucide-react';
+import { Users, TrendingUp, CreditCard, AlertTriangle, Calendar, Flame, GraduationCap, Bot, ArrowUpRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 import api from '../utils/api';
-import { fmt, fmtNum, fmtDate } from '../utils/constants';
+import { fmt, fmtNum, fmtDate, timeAgo } from '../utils/constants';
 import { StatCard, LoadingState, GradeBadge } from '../components/ui/index';
 import { useAuthStore } from '../store/authStore';
 import { Link } from 'react-router-dom';
@@ -15,6 +15,8 @@ export default function DashboardPage() {
   const { data: analytics, isLoading } = useQuery({ queryKey: ['analytics'], queryFn: () => api.get('/analytics/dashboard').then(r => r.data) });
   const { data: payStats } = useQuery({ queryKey: ['payment-stats'], queryFn: () => api.get('/payments/stats').then(r => r.data) });
   const { data: hotLeads } = useQuery({ queryKey: ['hot-leads'], queryFn: () => api.get('/leads?grade=HOT&limit=5').then(r => r.data) });
+  const { data: metaStats } = useQuery({ queryKey: ['meta-stats-dash'], queryFn: () => api.get('/meta/stats').then(r => r.data), refetchInterval: 30000 });
+  const { data: metaLeadsData } = useQuery({ queryKey: ['meta-leads-dash'], queryFn: () => api.get('/meta/leads?limit=5').then(r => r.data), refetchInterval: 30000 });
 
   if (isLoading) return <LoadingState text="Loading dashboard..." />;
   const ov = analytics?.overview || {};
@@ -145,6 +147,93 @@ export default function DashboardPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      </div>
+
+      {/* Meta Ads Live Feed */}
+      <div className="card overflow-hidden">
+        <div className="p-5 text-white" style={{ background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 100%)' }}>
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse flex-shrink-0" />
+            <h3 className="text-lg font-bold tracking-tight">Meta Ads — Live Feed</h3>
+          </div>
+          <p className="text-white/75 text-sm mt-1">Facebook & Instagram leads — updates every 30 seconds</p>
+        </div>
+
+        <div className="p-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Stats */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xl flex-shrink-0" style={{ background: '#1877F2' }}>f</div>
+                <div>
+                  <div className="text-2xl font-bold text-blue-700">{metaStats?.facebook_today ?? 0}</div>
+                  <div className="text-xs text-gray-500">Facebook Leads Today</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'linear-gradient(135deg, #fce4ec 0%, #f3e5f5 100%)' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xs flex-shrink-0" style={{ background: 'linear-gradient(135deg, #E1306C, #833AB4)' }}>IG</div>
+                <div>
+                  <div className="text-2xl font-bold" style={{ color: '#E1306C' }}>{metaStats?.instagram_today ?? 0}</div>
+                  <div className="text-xs text-gray-500">Instagram Leads Today</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-xl">
+                <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white text-lg flex-shrink-0">📅</div>
+                <div>
+                  <div className="text-2xl font-bold text-indigo-700">{(metaStats?.facebook_month ?? 0) + (metaStats?.instagram_month ?? 0)}</div>
+                  <div className="text-xs text-gray-500">This Month Total</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl">
+                <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0">%</div>
+                <div>
+                  <div className="text-2xl font-bold text-green-700">{ov.conversionRate ?? 0}%</div>
+                  <div className="text-xs text-gray-500">Conversion from Meta</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Last 5 leads */}
+            <div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Last 5 Meta Leads</div>
+              <div className="space-y-2">
+                {(metaLeadsData?.leads || []).slice(0, 5).map(lead => (
+                  <div key={lead.id} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{lead.name}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {lead.source === 'FACEBOOK_ADS' ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded font-bold text-white" style={{ background: '#1877F2' }}>FB</span>
+                        ) : (
+                          <span className="text-xs px-1.5 py-0.5 rounded font-bold text-white" style={{ background: 'linear-gradient(135deg, #E1306C, #833AB4)' }}>IG</span>
+                        )}
+                        <span className="text-xs text-gray-400">{timeAgo(lead.createdAt)}</span>
+                      </div>
+                    </div>
+                    <GradeBadge grade={lead.aiGrade} score={lead.aiScore} />
+                    <Link to={`/leads/${lead.id}`} className="text-xs text-primary-600 hover:text-primary-700 font-medium whitespace-nowrap flex items-center gap-0.5">
+                      View <ArrowUpRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+                ))}
+                {!(metaLeadsData?.leads?.length) && (
+                  <div className="text-center text-gray-400 text-sm py-8">No Meta leads yet</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <Link
+              to="/meta"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm text-white transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 100%)' }}
+            >
+              View All Meta Leads
+              <ArrowUpRight className="w-4 h-4" />
+            </Link>
           </div>
         </div>
       </div>

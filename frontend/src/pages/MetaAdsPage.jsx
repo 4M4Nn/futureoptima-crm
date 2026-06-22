@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Share2, Copy, RefreshCw, CheckCircle, ArrowUpRight } from 'lucide-react';
+import { Share2, Copy, RefreshCw, CheckCircle, ArrowUpRight, Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import api from '../utils/api';
 import { timeAgo } from '../utils/constants';
 import { LoadingState, GradeBadge } from '../components/ui/index';
@@ -35,6 +35,29 @@ function CopyField({ label, value, note }) {
   );
 }
 
+function AnimatedNumber({ value }) {
+  const [display, setDisplay] = useState(0);
+  const startRef = useRef(0);
+  const frameRef = useRef(null);
+  useEffect(() => {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    const start = startRef.current;
+    const end = Number(value) || 0;
+    const duration = 800;
+    const startTime = performance.now();
+    const tick = (now) => {
+      const progress = Math.min((now - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(start + (end - start) * eased));
+      if (progress < 1) frameRef.current = requestAnimationFrame(tick);
+      else startRef.current = end;
+    };
+    frameRef.current = requestAnimationFrame(tick);
+    return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
+  }, [value]);
+  return <>{display}</>;
+}
+
 const FB_STEPS = [
   'Go to business.facebook.com/adsmanager',
   'Click Create → Lead generation campaign',
@@ -64,20 +87,42 @@ const IG_STEPS = [
 
 export default function MetaAdsPage() {
   const [setupTab, setSetupTab] = useState('facebook');
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [secondsAgo, setSecondsAgo] = useState(0);
+  const [countdown, setCountdown] = useState(30);
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['meta-stats'],
+  const { data: stats, isLoading: statsLoading, isFetching: statsFetching } = useQuery({
+    queryKey: ['meta-stats', refreshKey],
     queryFn: () => api.get('/meta/stats').then(r => r.data),
     refetchInterval: 30000,
   });
 
-  const { data: leadsData, isLoading: leadsLoading, refetch } = useQuery({
-    queryKey: ['meta-leads'],
+  const { data: leadsData, isLoading: leadsLoading, isFetching: leadsFetching, refetch, dataUpdatedAt } = useQuery({
+    queryKey: ['meta-leads', refreshKey],
     queryFn: () => api.get('/meta/leads').then(r => r.data),
     refetchInterval: 30000,
   });
 
+  const isFetching = statsFetching || leadsFetching;
   const leads = leadsData?.leads || [];
+
+  useEffect(() => {
+    if (dataUpdatedAt) setLastUpdated(dataUpdatedAt);
+  }, [dataUpdatedAt]);
+
+  useEffect(() => {
+    if (!lastUpdated) return;
+    setCountdown(30);
+    const timer = setInterval(() => setCountdown(c => (c > 0 ? c - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [lastUpdated]);
+
+  useEffect(() => {
+    if (!lastUpdated) return;
+    const timer = setInterval(() => setSecondsAgo(Math.floor((Date.now() - lastUpdated) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [lastUpdated]);
 
   // Build daily chart data from stats
   const dailyChartData = useMemo(() => {
@@ -93,37 +138,44 @@ export default function MetaAdsPage() {
     return Object.values(days).sort((a, b) => a.day.localeCompare(b.day));
   }, [stats]);
 
+  const fbDailyArr = stats?.dailyFacebook || [];
+  const igDailyArr = stats?.dailyInstagram || [];
+  const yesterdayFB = fbDailyArr.length >= 2 ? (fbDailyArr[fbDailyArr.length - 2]?.count ?? 0) : 0;
+  const yesterdayIG = igDailyArr.length >= 2 ? (igDailyArr[igDailyArr.length - 2]?.count ?? 0) : 0;
+  const fbTrend = (stats?.facebook_today ?? 0) - yesterdayFB;
+  const igTrend = (stats?.instagram_today ?? 0) - yesterdayIG;
+
   const STAT_CARDS = [
     {
-      label: 'Facebook Today',
+      label: 'Facebook Leads Today',
       value: stats?.facebook_today ?? 0,
-      icon: '📘',
-      color: 'bg-blue-50 border-blue-200',
-      textColor: 'text-blue-700',
+      iconEl: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-white font-bold text-xl">f</span>,
+      gradient: 'from-[#1877F2] to-[#166FE5]',
+      trend: fbTrend,
       sub: `${stats?.facebook_week ?? 0} this week`,
     },
     {
-      label: 'Instagram Today',
+      label: 'Instagram Leads Today',
       value: stats?.instagram_today ?? 0,
-      icon: '📸',
-      color: 'bg-pink-50 border-pink-200',
-      textColor: 'text-pink-700',
+      iconEl: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">📸</span>,
+      gradient: 'from-[#E1306C] to-[#833AB4]',
+      trend: igTrend,
       sub: `${stats?.instagram_week ?? 0} this week`,
     },
     {
       label: 'Total This Month',
       value: (stats?.facebook_month ?? 0) + (stats?.instagram_month ?? 0),
-      icon: '📅',
-      color: 'bg-indigo-50 border-indigo-200',
-      textColor: 'text-indigo-700',
+      iconEl: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">📅</span>,
+      gradient: 'from-indigo-600 to-purple-600',
+      trend: null,
       sub: 'FB + IG combined',
     },
     {
       label: 'All Time Total',
       value: stats?.total ?? 0,
-      icon: '🏆',
-      color: 'bg-amber-50 border-amber-200',
-      textColor: 'text-amber-700',
+      iconEl: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">🏆</span>,
+      gradient: 'from-amber-500 to-yellow-400',
+      trend: null,
       sub: 'all Meta leads',
     },
   ];
@@ -133,16 +185,30 @@ export default function MetaAdsPage() {
       <div>
         <h1 className="page-title">Meta Ads Integration</h1>
         <p className="text-gray-500 text-sm">Facebook & Instagram lead ads — auto-imported and AI-scored in real time</p>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-3 py-1.5">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            <span className="text-xs font-semibold text-green-700">Live — receiving leads in real time</span>
+          </span>
+        </div>
       </div>
 
       {/* Section 1: Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {STAT_CARDS.map(({ label, value, icon, color, textColor, sub }) => (
-          <div key={label} className={`rounded-2xl p-4 border ${color}`}>
-            <div className="text-2xl mb-1">{icon}</div>
-            <div className={`text-3xl font-bold ${textColor}`}>{statsLoading ? '—' : value}</div>
-            <div className={`text-sm font-semibold mt-0.5 ${textColor}`}>{label}</div>
-            <div className="text-xs text-gray-500 mt-1">{sub}</div>
+        {STAT_CARDS.map(({ label, value, iconEl, gradient, trend, sub }) => (
+          <div key={label} className={`rounded-2xl p-5 bg-gradient-to-br ${gradient} text-white shadow-lg`}>
+            <div className="flex items-center mb-2">{iconEl}</div>
+            <div className="text-4xl font-bold mt-1">
+              {statsLoading ? '—' : <AnimatedNumber value={value} />}
+            </div>
+            <div className="text-sm font-semibold mt-1 text-white/90">{label}</div>
+            <div className="text-xs text-white/70 mt-2 flex items-center gap-1">
+              {trend !== null && trend !== undefined ? (
+                trend >= 0
+                  ? <><TrendingUp className="w-3 h-3" /><span>+{trend} vs yesterday</span></>
+                  : <><TrendingDown className="w-3 h-3" /><span>{trend} vs yesterday</span></>
+              ) : <span>{sub}</span>}
+            </div>
           </div>
         ))}
       </div>
@@ -274,9 +340,19 @@ export default function MetaAdsPage() {
       <div className="card overflow-hidden">
         <div className="card-header flex items-center justify-between">
           <h3 className="section-title">Recent Leads from Facebook & Instagram</h3>
-          <button onClick={() => refetch()} className="btn-secondary text-xs">
-            <RefreshCw className="w-3 h-3" />Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            {lastUpdated && !isFetching && (
+              <span className="text-xs text-gray-400">Updated {secondsAgo}s ago</span>
+            )}
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              disabled={isFetching}
+              className="btn-secondary text-xs disabled:opacity-60"
+            >
+              {isFetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              {isFetching ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
         </div>
         {leadsLoading ? (
           <LoadingState />
@@ -326,8 +402,9 @@ export default function MetaAdsPage() {
                 </tbody>
               </table>
             </div>
-            <div className="px-4 py-2.5 border-t border-gray-50 text-xs text-gray-400 text-right">
-              Last 50 leads · Auto-refreshes every 30s
+            <div className="px-4 py-2.5 border-t border-gray-50 flex items-center justify-between">
+              <span className="text-xs text-gray-400">Last 50 leads</span>
+              <span className="text-xs text-gray-400">Auto-refreshes every 30 seconds · Next in {countdown}s</span>
             </div>
           </>
         )}
