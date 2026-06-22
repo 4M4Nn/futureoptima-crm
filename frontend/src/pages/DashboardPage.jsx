@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Users, TrendingUp, CreditCard, AlertTriangle, Calendar, Flame, GraduationCap, Bot, ArrowUpRight } from 'lucide-react';
+import { Users, TrendingUp, CreditCard, AlertTriangle, Calendar, Flame, GraduationCap, Bot, ArrowUpRight, PhoneCall } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 import api from '../utils/api';
 import { fmt, fmtNum, fmtDate, timeAgo } from '../utils/constants';
 import { StatCard, LoadingState, GradeBadge } from '../components/ui/index';
+import QuickCallModal from '../components/QuickCallModal';
 import { useAuthStore } from '../store/authStore';
 import { Link } from 'react-router-dom';
 
@@ -17,6 +19,10 @@ export default function DashboardPage() {
   const { data: hotLeads } = useQuery({ queryKey: ['hot-leads'], queryFn: () => api.get('/leads?grade=HOT&limit=5').then(r => r.data) });
   const { data: metaStats } = useQuery({ queryKey: ['meta-stats-dash'], queryFn: () => api.get('/meta/stats').then(r => r.data), refetchInterval: 30000 });
   const { data: metaLeadsData } = useQuery({ queryKey: ['meta-leads-dash'], queryFn: () => api.get('/meta/leads?limit=5').then(r => r.data), refetchInterval: 30000 });
+  const { data: overdueFollowups } = useQuery({ queryKey: ['followups', 'overdue'], queryFn: () => api.get('/leads/followups?period=overdue').then(r => r.data), refetchInterval: 60000 });
+  const { data: todayFollowups } = useQuery({ queryKey: ['followups', 'today'], queryFn: () => api.get('/leads/followups?period=today').then(r => r.data), refetchInterval: 60000 });
+
+  const [quickCallLead, setQuickCallLead] = useState(null);
 
   if (isLoading) return <LoadingState text="Loading dashboard..." />;
   const ov = analytics?.overview || {};
@@ -52,6 +58,33 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Overdue Alert — only shown when there are overdue follow-ups */}
+      {(overdueFollowups?.count ?? 0) > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <span className="font-bold text-red-700">
+                ⚠️ You have {overdueFollowups.count} overdue follow-up{overdueFollowups.count !== 1 ? 's' : ''}!
+              </span>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                {(overdueFollowups.leads || []).slice(0, 3).map(lead => (
+                  <Link key={lead.id} to={`/leads/${lead.id}`} className="text-sm text-red-700 hover:text-red-800 font-medium">
+                    {lead.name} — {lead.phone}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <Link
+              to="/followups"
+              className="flex-shrink-0 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+            >
+              View all overdue →
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -151,6 +184,74 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Today's Call List */}
+      <div className="card overflow-hidden">
+        <div className="card-header flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <PhoneCall className="w-4 h-4 text-orange-600" />
+            <h3 className="section-title">📞 Today's Follow-ups</h3>
+            {(todayFollowups?.count ?? 0) > 0 && (
+              <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full font-bold">{todayFollowups.count}</span>
+            )}
+          </div>
+          <Link to="/followups" className="text-sm text-primary-600 hover:underline">View all →</Link>
+        </div>
+        {!(todayFollowups?.leads?.length) ? (
+          <div className="p-8 text-center text-gray-400">
+            <PhoneCall className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            <p className="text-sm font-medium">No follow-ups scheduled for today</p>
+            <p className="text-xs mt-1">Great — or add some calls to stay on top of your leads!</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {['Name', 'Phone', 'Course', 'AI Grade', 'Action'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left table-header">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(todayFollowups.leads || []).slice(0, 5).map(lead => (
+                    <tr key={lead.id} className="table-row">
+                      <td className="px-4 py-3">
+                        <Link to={`/leads/${lead.id}`} className="font-medium text-gray-900 hover:text-primary-600 text-sm">
+                          {lead.aiGrade === 'HOT' && '🔥 '}{lead.name}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <a href={`tel:+91${lead.phone?.replace(/\D/g, '')}`} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+                          {lead.phone}
+                        </a>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">{lead.interestedCourse?.replace(/_/g, ' ') || '—'}</td>
+                      <td className="px-4 py-3"><GradeBadge grade={lead.aiGrade} score={lead.aiScore} /></td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => setQuickCallLead(lead)}
+                          className="text-xs bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 px-2.5 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1"
+                        >
+                          <PhoneCall className="w-3 h-3" /> Mark Called
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {(todayFollowups?.count ?? 0) > 5 && (
+              <div className="px-4 py-2.5 border-t border-gray-50 text-right">
+                <Link to="/followups" className="text-xs text-primary-600 hover:underline font-medium">
+                  View all {todayFollowups.count} follow-ups →
+                </Link>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Meta Ads Live Feed */}
       <div className="card overflow-hidden">
         <div className="p-5 text-white" style={{ background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 100%)' }}>
@@ -238,5 +339,12 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+
+    <QuickCallModal
+      lead={quickCallLead}
+      open={!!quickCallLead}
+      onClose={() => setQuickCallLead(null)}
+      onSuccess={() => setQuickCallLead(null)}
+    />
   );
 }

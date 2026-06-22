@@ -1,11 +1,14 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, GraduationCap, CreditCard, BarChart3, Bot, CheckSquare, Megaphone, MessageSquare, BookOpen, Settings, UserCog, ChevronLeft, ChevronRight, Zap, Share2, FileText } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, CreditCard, BarChart3, Bot, CheckSquare, Megaphone, MessageSquare, BookOpen, Settings, UserCog, ChevronLeft, ChevronRight, Zap, Share2, FileText, PhoneCall } from 'lucide-react';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/authStore';
+import api from '../../utils/api';
 import clsx from 'clsx';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/followups', icon: PhoneCall, label: 'Follow-ups', followupBadge: true },
   { to: '/leads', icon: Users, label: 'Leads', badge: 'AI' },
   { to: '/students', icon: GraduationCap, label: 'Students' },
   { to: '/payments', icon: CreditCard, label: 'Payments' },
@@ -24,6 +27,20 @@ const navItems = [
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const { user } = useAuthStore();
+
+  const { data: overdueData } = useQuery({
+    queryKey: ['followups', 'overdue'],
+    queryFn: () => api.get('/leads/followups?period=overdue').then(r => r.data),
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+  const { data: todayData } = useQuery({
+    queryKey: ['followups', 'today'],
+    queryFn: () => api.get('/leads/followups?period=today').then(r => r.data),
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+  const followupCount = (overdueData?.count || 0) + (todayData?.count || 0);
 
   return (
     <aside className={clsx('flex flex-col h-screen bg-white border-r border-gray-100 transition-all duration-300 z-20', collapsed ? 'w-16' : 'w-64')}>
@@ -51,6 +68,9 @@ export default function Sidebar() {
             <NavLink key={item.to} to={item.to} className={({ isActive }) => clsx(isActive ? 'sidebar-link-active' : 'sidebar-link-inactive', 'relative')}>
               <item.icon className="w-5 h-5 flex-shrink-0" />
               {!collapsed && <span className="flex-1">{item.label}</span>}
+              {!collapsed && item.followupBadge && followupCount > 0 && (
+                <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold min-w-[20px] text-center">{followupCount}</span>
+              )}
               {!collapsed && item.badge && (
                 <span className="text-xs bg-primary-600 text-white px-1.5 py-0.5 rounded-full font-semibold">{item.badge}</span>
               )}

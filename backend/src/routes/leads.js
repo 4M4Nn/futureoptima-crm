@@ -62,6 +62,38 @@ router.get('/stats/summary', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.get('/followups', async (req, res) => {
+  try {
+    const { period = 'today' } = req.query;
+    const now = new Date();
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
+    const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const tomorrowEnd = new Date(todayEnd); tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+    const weekEnd = new Date(todayStart); weekEnd.setDate(weekEnd.getDate() + 7);
+
+    const where = { status: { notIn: ['WON', 'LOST'] } };
+    if (period === 'overdue') where.nextFollowUpAt = { lt: todayStart };
+    else if (period === 'today') where.nextFollowUpAt = { gte: todayStart, lte: todayEnd };
+    else if (period === 'tomorrow') where.nextFollowUpAt = { gte: tomorrowStart, lte: tomorrowEnd };
+    else if (period === 'week') where.nextFollowUpAt = { gte: todayStart, lte: weekEnd };
+
+    if (req.user.role === 'COUNSELOR') where.assignedToId = req.user.id;
+
+    const leads = await prisma.lead.findMany({
+      where,
+      select: {
+        id: true, name: true, phone: true, city: true, interestedCourse: true,
+        aiGrade: true, aiScore: true, status: true, nextFollowUpAt: true,
+        assignedTo: { select: { id: true, name: true } },
+      },
+      orderBy: { nextFollowUpAt: 'asc' },
+      take: 50,
+    });
+    res.json({ leads, count: leads.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const lead = await prisma.lead.findUnique({
@@ -117,6 +149,30 @@ router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
     await prisma.lead.update({ where: { id: req.params.id }, data: { status: 'LOST' } });
     res.json({ message: 'Lead archived' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/:id/schedule-followup', async (req, res) => {
+  try {
+    const { nextFollowUpAt, outcome, notes } = req.body;
+    const updateData = { lastContactAt: new Date() };
+    if (nextFollowUpAt) updateData.nextFollowUpAt = new Date(nextFollowUpAt);
+    if (outcome === 'INTERESTED') updateData.status = 'QUALIFIED';
+    if (outcome === 'CONVERTED') updateData.status = 'WON';
+
+    const lead = await prisma.lead.update({ where: { id: req.params.id }, data: updateData });
+
+    if (outcome) {
+      await prisma.callLog.create({
+        data: { leadId: req.params.id, calledById: req.user.id, outcome, notes: notes || null },
+      });
+    } else if (notes) {
+      await prisma.note.create({
+        data: { leadId: req.params.id, authorId: req.user.id, content: notes },
+      });
+    }
+    await logActivity(req.params.id, req.user.id, 'FOLLOWUP_SCHEDULED', { outcome, nextFollowUpAt });
+    res.json(lead);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

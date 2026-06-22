@@ -18,6 +18,7 @@ import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import MetaAdsPage from './pages/MetaAdsPage';
 import ReportsPage from './pages/ReportsPage';
+import FollowUpsPage from './pages/FollowUpsPage';
 
 function PrivateRoute({ children }) {
   const { isAuthenticated } = useAuthStore();
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="followups" element={<FollowUpsPage />} />
           <Route path="leads" element={<LeadsPage />} />
           <Route path="leads/:id" element={<LeadDetailPage />} />
           <Route path="students" element={<StudentsPage />} />
