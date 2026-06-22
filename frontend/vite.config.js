@@ -4,7 +4,16 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 7173,
-    proxy: { '/api': { target: 'http://localhost:7000', changeOrigin: true }, '/uploads': { target: 'http://localhost:7000', changeOrigin: true } },
+    proxy: { 
+      '/api': { 
+        target: 'http://localhost:7000', 
+        changeOrigin: true 
+      }, 
+      '/uploads': { 
+        target: 'http://localhost:7000', 
+        changeOrigin: true 
+      } 
+    },
   },
   build: { outDir: 'dist', sourcemap: false },
 });
