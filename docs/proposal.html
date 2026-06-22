@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Future Optima CRM — Project Proposal</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #f8f9fc; }
+  .page { max-width: 860px; margin: 0 auto; background: white; }
+  @media print { body { background: white; } .no-print { display: none; } }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #1B2B6B 0%, #2D47B0 60%, #1B2B6B 100%); color: white; padding: 48px 48px 36px; position: relative; overflow: hidden; }
+  .header::after { content: ''; position: absolute; right: -60px; top: -60px; width: 240px; height: 240px; border-radius: 50%; background: rgba(255,255,255,0.05); }
+  .header-logo { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+  .header-sub { color: #93C5FD; font-size: 13px; margin-top: 4px; }
+  .header-divider { border: none; border-top: 1px solid rgba(255,255,255,0.2); margin: 24px 0; }
+  .header-title { font-size: 38px; font-weight: 800; line-height: 1.15; }
+  .header-title span { color: #F59E0B; }
+  .header-meta { display: flex; gap: 32px; margin-top: 20px; }
+  .header-meta-item { font-size: 12px; color: #93C5FD; }
+  .header-meta-item strong { display: block; color: white; font-size: 14px; margin-bottom: 2px; }
+
+  /* Section */
+  .section { padding: 36px 48px; border-bottom: 1px solid #f0f0f0; }
+  .section:last-child { border-bottom: none; }
+  .section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #F59E0B; margin-bottom: 16px; }
+  h2 { font-size: 22px; font-weight: 700; color: #1B2B6B; margin-bottom: 12px; }
+  p { font-size: 14px; line-height: 1.7; color: #4B5563; margin-bottom: 10px; }
+
+  /* Features grid */
+  .features-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+  .feature-card { border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px; }
+  .feature-card .icon { font-size: 20px; margin-bottom: 6px; }
+  .feature-card h4 { font-size: 13px; font-weight: 700; color: #1B2B6B; margin-bottom: 4px; }
+  .feature-card p { font-size: 12px; margin: 0; color: #6B7280; }
+  .feature-card.gold { border-color: #F59E0B; background: #FFFBEB; }
+
+  /* Pages list */
+  .pages-list { list-style: none; }
+  .pages-list li { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
+  .pages-list li:last-child { border-bottom: none; }
+  .pages-list .num { width: 22px; height: 22px; border-radius: 50%; background: #1B2B6B; color: white; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .pages-list .name { font-weight: 600; color: #1B2B6B; min-width: 160px; }
+  .pages-list .desc { color: #6B7280; }
+
+  /* Tech table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  th { background: #1B2B6B; color: white; padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f0f0f0; }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: #f9fafb; }
+
+  /* Credentials */
+  .creds-box { background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 16px; margin-top: 8px; }
+  .cred-row { display: flex; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+  .cred-row:last-child { margin-bottom: 0; }
+  .cred-label { color: #1D4ED8; font-weight: 600; min-width: 80px; }
+  .cred-val { font-family: monospace; color: #1a1a2e; }
+
+  /* Pricing */
+  .pricing-box { display: flex; gap: 16px; margin-top: 8px; }
+  .price-card { flex: 1; border: 2px solid #E5E7EB; border-radius: 12px; padding: 20px; text-align: center; }
+  .price-card.featured { border-color: #F59E0B; background: linear-gradient(135deg, #FFFBEB, #FEF3C7); }
+  .price-card .amount { font-size: 32px; font-weight: 800; color: #1B2B6B; }
+  .price-card .period { font-size: 12px; color: #9CA3AF; margin-bottom: 12px; }
+  .price-card .includes { font-size: 12px; color: #4B5563; line-height: 1.8; }
+
+  /* Signature */
+  .sig-section { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 24px; }
+  .sig-box { border-top: 2px solid #1B2B6B; padding-top: 12px; }
+  .sig-box .name { font-weight: 700; font-size: 14px; color: #1B2B6B; margin-top: 32px; }
+  .sig-box .title { font-size: 12px; color: #6B7280; }
+  .sig-box .date { font-size: 11px; color: #9CA3AF; margin-top: 4px; }
+
+  /* Badge */
+  .badge { display: inline-block; background: #1B2B6B; color: white; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+  .badge.gold { background: #F59E0B; }
+
+  /* Footer */
+  .footer { background: #1B2B6B; color: #93C5FD; padding: 20px 48px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+  .footer strong { color: white; }
+
+  .print-btn { position: fixed; bottom: 24px; right: 24px; background: #1B2B6B; color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+  .print-btn:hover { background: #2D47B0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-logo">⚡ Nexora AI Solutions</div>
+    <div class="header-sub">Enterprise Software Development • Kerala, India</div>
+    <hr class="header-divider" />
+    <div class="header-title">Future Optima CRM<br /><span>v1.0 — Delivery Package</span></div>
+    <div class="header-meta">
+      <div class="header-meta-item"><strong>Client</strong>Future Optima IT Solutions</div>
+      <div class="header-meta-item"><strong>Delivery Date</strong>June 2026</div>
+      <div class="header-meta-item"><strong>Project Type</strong>AI-Powered CRM</div>
+      <div class="header-meta-item"><strong>Version</strong>1.0.0 Production</div>
+    </div>
+  </div>
+
+  <!-- Overview -->
+  <div class="section">
+    <div class="section-title">Project Overview</div>
+    <h2>Complete AI-Powered Institute Management System</h2>
+    <p>Future Optima CRM is a custom-built, AI-powered Customer Relationship Management system designed exclusively for Future Optima IT Solutions. It automates lead management, student enrollment, fee collection, and business reporting — all in one unified platform.</p>
+    <p>The system uses local AI (Ollama with llama3.2) for zero-cost lead scoring, generates professional PDF receipts instantly, and integrates with Facebook and Instagram to automatically capture ad leads.</p>
+  </div>
+
+  <!-- Features -->
+  <div class="section">
+    <div class="section-title">Features Delivered</div>
+    <div class="features-grid">
+      <div class="feature-card gold">
+        <div class="icon">🤖</div>
+        <h4>AI Lead Scoring <span class="badge">Zero API Cost</span></h4>
+        <p>Local Ollama AI automatically grades every lead as Hot/Warm/Cold/Unqualified based on profile analysis</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🎓</div>
+        <h4>Student Enrollment</h4>
+        <p>One-click enrollment with course fee, discount, and automatic installment plan generation</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📄</div>
+        <h4>PDF Receipt Generation</h4>
+        <p>Professional PDF receipts with QR code, amount in words, Future Optima branding — instant download</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">💰</div>
+        <h4>Installment Tracking</h4>
+        <p>Complete EMI management with due dates, overdue alerts, and one-click payment recording</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📊</div>
+        <h4>Reports & Analytics</h4>
+        <p>4-tab reports: Fee Collection, Course Enrollment, Lead Sources, Counselor Performance — all exportable to CSV</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🌐</div>
+        <h4>Meta Ads Integration</h4>
+        <p>Facebook & Instagram lead ads auto-imported via webhook, AI-scored instantly, mapped to courses</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📣</div>
+        <h4>WhatsApp Campaigns</h4>
+        <p>Bulk campaign creation with AI-generated messages, targeting by lead grade or course interest</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">👥</div>
+        <h4>Team Management</h4>
+        <p>6 role levels: Super Admin, Admin, Counselor, Faculty, Accountant, Viewer — with fine-grained permissions</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 16 Pages -->
+  <div class="section">
+    <div class="section-title">All 16 Pages Delivered</div>
+    <ul class="pages-list">
+      <li><span class="num">1</span><span class="name">Dashboard</span><span class="desc">Real-time KPIs, charts, hot leads, pipeline view</span></li>
+      <li><span class="num">2</span><span class="name">Lead Management</span><span class="desc">Full lead list with AI grades, filters, bulk scoring</span></li>
+      <li><span class="num">3</span><span class="name">Lead Detail</span><span class="desc">Timeline, AI chat, notes, calls, enrollment button</span></li>
+      <li><span class="num">4</span><span class="name">Students</span><span class="desc">Enrolled students with fee summary and search</span></li>
+      <li><span class="num">5</span><span class="name">Student Detail</span><span class="desc">Installments, payment history, PDF download, AI reminder</span></li>
+      <li><span class="num">6</span><span class="name">Payments</span><span class="desc">Record payments, search by phone, instant receipt download</span></li>
+      <li><span class="num">7</span><span class="name">Analytics</span><span class="desc">Course interest charts, lead sources, pipeline stats</span></li>
+      <li><span class="num">8</span><span class="name">Reports</span><span class="desc">Fee collection, course enrollment, lead source, counselor reports — CSV export</span></li>
+      <li><span class="num">9</span><span class="name">Meta Ads</span><span class="desc">Webhook config, Facebook/Instagram setup guide, live lead table</span></li>
+      <li><span class="num">10</span><span class="name">AI Assistant</span><span class="desc">Chat with AI about leads, get answers and suggestions</span></li>
+      <li><span class="num">11</span><span class="name">Tasks</span><span class="desc">Task management with AI suggestions, priority tracking</span></li>
+      <li><span class="num">12</span><span class="name">Campaigns</span><span class="desc">WhatsApp campaign creation with AI message generation</span></li>
+      <li><span class="num">13</span><span class="name">WhatsApp</span><span class="desc">Message history, send individual messages</span></li>
+      <li><span class="num">14</span><span class="name">Courses</span><span class="desc">Course catalog with fees, duration, EMI options</span></li>
+      <li><span class="num">15</span><span class="name">Users</span><span class="desc">Team management with role assignment (Admin only)</span></li>
+      <li><span class="num">16</span><span class="name">Settings</span><span class="desc">AI status, institute config, password change</span></li>
+    </ul>
+  </div>
+
+  <!-- Tech Stack -->
+  <div class="section">
+    <div class="section-title">Technology Stack</div>
+    <table>
+      <tr><th>Layer</th><th>Technology</th><th>Notes</th></tr>
+      <tr><td>Frontend</td><td>React 18 + Vite + Tailwind CSS</td><td>Fast, responsive SPA</td></tr>
+      <tr><td>State Management</td><td>Zustand + React Query</td><td>Efficient caching & sync</td></tr>
+      <tr><td>Backend</td><td>Node.js + Express.js</td><td>REST API with JWT auth</td></tr>
+      <tr><td>ORM</td><td>Prisma</td><td>Type-safe database access</td></tr>
+      <tr><td>Database</td><td>PostgreSQL (Neon)</td><td>Serverless, auto-scaling</td></tr>
+      <tr><td>AI Engine</td><td>Ollama (llama3.2)</td><td>Local AI — ZERO API cost</td></tr>
+      <tr><td>PDF Generation</td><td>PDFKit + QRCode</td><td>Professional receipts</td></tr>
+      <tr><td>Charts</td><td>Recharts</td><td>Interactive dashboards</td></tr>
+      <tr><td>Deployment</td><td>Render + Vercel</td><td>Cloud-hosted, auto-deploy</td></tr>
+    </table>
+  </div>
+
+  <!-- Login Credentials -->
+  <div class="section">
+    <div class="section-title">Login Credentials</div>
+    <div class="creds-box">
+      <div class="cred-row"><span class="cred-label">Admin URL:</span><span class="cred-val">https://futureoptima-crm.vercel.app</span></div>
+      <div class="cred-row"><span class="cred-label">Admin:</span><span class="cred-val">admin@futureoptima.in / FutureOptima@2025</span></div>
+      <div class="cred-row"><span class="cred-label">Counselor:</span><span class="cred-val">counselor@futureoptima.in / Counselor@123</span></div>
+    </div>
+  </div>
+
+  <!-- Maintenance Pricing -->
+  <div class="section">
+    <div class="section-title">Maintenance & Support</div>
+    <div class="pricing-box">
+      <div class="price-card featured">
+        <div class="amount">₹5,000</div>
+        <div class="period">per month</div>
+        <div class="includes">
+          ✅ Bug fixes & patches<br/>
+          ✅ Minor feature updates<br/>
+          ✅ Database backups<br/>
+          ✅ Hosting support<br/>
+          ✅ 24-hour response time<br/>
+          ✅ WhatsApp support
+        </div>
+      </div>
+      <div class="price-card">
+        <div class="amount">₹25,000</div>
+        <div class="period">one-time setup</div>
+        <div class="includes">
+          ✅ Full deployment<br/>
+          ✅ Database migration<br/>
+          ✅ Staff training (1 session)<br/>
+          ✅ Documentation<br/>
+          ✅ 1 month free support<br/>
+          ✅ Source code handover
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Signatures -->
+  <div class="section">
+    <div class="section-title">Agreement & Acceptance</div>
+    <p>By signing below, both parties confirm that the Future Optima CRM v1.0 has been delivered as per the agreed specifications and the handover is complete.</p>
+    <div class="sig-section">
+      <div class="sig-box">
+        <div class="name">Nexora AI Solutions</div>
+        <div class="title">Developer / Vendor</div>
+        <div class="date">Date: ________________</div>
+      </div>
+      <div class="sig-box">
+        <div class="name">Future Optima IT Solutions</div>
+        <div class="title">Client / Authorized Signatory</div>
+        <div class="date">Date: ________________</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div>© 2026 <strong>Nexora AI Solutions</strong> • support@nexoraai.in</div>
+    <div>Future Optima CRM v1.0 • Confidential</div>
+  </div>
+</div>
+
+<button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save PDF</button>
+</body>
+</html>

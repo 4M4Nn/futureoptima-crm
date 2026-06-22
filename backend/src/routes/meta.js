@@ -1,0 +1,228 @@
+import express from 'express';
+import { prisma } from '../utils/prisma.js';
+import { authenticate } from '../middleware/auth.js';
+import { scoreLeadWithOllama } from '../services/ollamaService.js';
+
+const router = express.Router();
+
+const COURSE_MAP = {
+  'ai engineering': 'AI_ENGINEERING',
+  'ai engineering & automation': 'AI_ENGINEERING',
+  'artificial intelligence': 'AI_ENGINEERING',
+  'ai automation': 'AI_ENGINEERING',
+  'ai': 'AI_ENGINEERING',
+  'data science': 'DATA_SCIENCE_AI',
+  'data science with ai': 'DATA_SCIENCE_AI',
+  'cybersecurity': 'AI_CYBERSECURITY',
+  'ai cybersecurity': 'AI_CYBERSECURITY',
+  'ai-powered cybersecurity': 'AI_CYBERSECURITY',
+  'cyber security': 'AI_CYBERSECURITY',
+  'python': 'PYTHON_FULLSTACK',
+  'python full stack': 'PYTHON_FULLSTACK',
+  'python full stack with ai': 'PYTHON_FULLSTACK',
+  'python fullstack': 'PYTHON_FULLSTACK',
+  'fullstack': 'PYTHON_FULLSTACK',
+  'vibe coding': 'VIBE_CODING_SAAS',
+  'vibe coding & saas': 'VIBE_CODING_SAAS',
+  'vibe coding & saas development': 'VIBE_CODING_SAAS',
+  'saas': 'VIBE_CODING_SAAS',
+  'vibe': 'VIBE_CODING_SAAS',
+  'data analytics': 'DATA_ANALYTICS',
+  'analytics': 'DATA_ANALYTICS',
+  'business analytics': 'BUSINESS_ANALYTICS',
+  'business': 'BUSINESS_ANALYTICS',
+};
+
+function mapCourse(courseStr) {
+  if (!courseStr) return null;
+  const lower = courseStr.toLowerCase().trim();
+  // Sort longest keys first so specific phrases match before generic ones (e.g. "python full stack" before "ai")
+  const sorted = Object.entries(COURSE_MAP).sort((a, b) => b[0].length - a[0].length);
+  for (const [key, val] of sorted) {
+    if (lower.includes(key)) return val;
+  }
+  return null;
+}
+
+async function fetchLeadFromGraph(leadgenId) {
+  const token = process.env.META_ACCESS_TOKEN;
+  if (!token) throw new Error('META_ACCESS_TOKEN not set in .env');
+  const url = `https://graph.facebook.com/v19.0/${leadgenId}?fields=field_data&access_token=${token}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Graph API ${res.status}: ${errBody}`);
+  }
+  return res.json();
+}
+
+// GET /api/meta/webhook — Facebook webhook verification
+router.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  res.status(403).send('Verification failed');
+});
+
+// POST /api/meta/webhook — receive Facebook & Instagram lead ads
+router.post('/webhook', async (req, res) => {
+  // Respond 200 immediately — Meta requires fast response
+  res.status(200).json({ status: 'ok' });
+
+  try {
+    const { entry = [] } = req.body;
+    for (const e of entry) {
+      for (const change of e.changes || []) {
+        if (change.field !== 'leadgen') continue;
+        const value = change.value || {};
+        const leadgenId = value.leadgen_id;
+        if (!leadgenId) continue;
+
+        const source = value.ad_id ? 'FACEBOOK_ADS' : 'INSTAGRAM';
+
+        let fields = {};
+        try {
+          const graphData = await fetchLeadFromGraph(leadgenId);
+          for (const f of graphData.field_data || []) {
+            fields[f.name] = f.values?.[0] || '';
+          }
+        } catch (err) {
+          console.error('[Meta] Graph API failed, using webhook body:', err.message);
+          for (const f of value.field_data || []) {
+            fields[f.name] = f.values?.[0] || '';
+          }
+        }
+
+        const firstName = fields.first_name || '';
+        const lastName = fields.last_name || '';
+        const name = fields.full_name || fields.name ||
+          (firstName || lastName ? `${firstName} ${lastName}`.trim() : 'Unknown Lead');
+        const rawPhone = fields.phone_number || fields.phone || '';
+        const phone = rawPhone.replace(/\D/g, '').slice(-10);
+        const email = fields.email || fields.email_address || null;
+        const courseStr = fields.course_interest ||
+          fields.which_course_are_you_interested_in_ ||
+          fields.which_course_are_you_interested_in ||
+          fields.interested_course ||
+          fields.course || null;
+
+        if (!phone || phone.length < 10) {
+          console.error('[Meta] Invalid phone:', { name, rawPhone, leadgenId });
+          continue;
+        }
+
+        const existing = await prisma.lead.findUnique({ where: { phone } });
+        if (existing) {
+          console.log(`[Meta] Lead already exists: ${phone}`);
+          continue;
+        }
+
+        const lead = await prisma.lead.create({
+          data: {
+            name,
+            phone,
+            email: email || undefined,
+            source,
+            interestedCourse: mapCourse(courseStr) || undefined,
+            status: 'NEW',
+          },
+        });
+
+        console.log(`[Meta] ✅ Lead created: ${lead.name} (${lead.phone}) source=${source}`);
+        scoreLeadWithOllama(lead.id).catch(err =>
+          console.error('[Meta] AI scoring error:', err.message)
+        );
+      }
+    }
+  } catch (err) {
+    console.error('[Meta] Webhook processing error:', err.message);
+  }
+});
+
+// GET /api/meta/stats — full stats with daily breakdown for chart
+router.get('/stats', authenticate, async (req, res) => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+    const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7); weekStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [fbToday, fbWeek, fbMonth, igToday, igWeek, igMonth, total, thisMonthLeads] = await Promise.all([
+      prisma.lead.count({ where: { source: 'FACEBOOK_ADS', createdAt: { gte: todayStart } } }),
+      prisma.lead.count({ where: { source: 'FACEBOOK_ADS', createdAt: { gte: weekStart } } }),
+      prisma.lead.count({ where: { source: 'FACEBOOK_ADS', createdAt: { gte: monthStart } } }),
+      prisma.lead.count({ where: { source: 'INSTAGRAM', createdAt: { gte: todayStart } } }),
+      prisma.lead.count({ where: { source: 'INSTAGRAM', createdAt: { gte: weekStart } } }),
+      prisma.lead.count({ where: { source: 'INSTAGRAM', createdAt: { gte: monthStart } } }),
+      prisma.lead.count({ where: { source: { in: ['FACEBOOK_ADS', 'INSTAGRAM'] } } }),
+      prisma.lead.findMany({
+        where: {
+          source: { in: ['FACEBOOK_ADS', 'INSTAGRAM'] },
+          createdAt: { gte: monthStart },
+        },
+        select: { source: true, createdAt: true },
+      }),
+    ]);
+
+    // Build daily breakdown
+    const dailyMap = {};
+    for (const lead of thisMonthLeads) {
+      const day = lead.createdAt.toISOString().slice(0, 10);
+      if (!dailyMap[day]) dailyMap[day] = { facebook: 0, instagram: 0 };
+      if (lead.source === 'FACEBOOK_ADS') dailyMap[day].facebook++;
+      else dailyMap[day].instagram++;
+    }
+
+    const dailyFacebook = Object.entries(dailyMap)
+      .map(([day, v]) => ({ day, count: v.facebook }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+    const dailyInstagram = Object.entries(dailyMap)
+      .map(([day, v]) => ({ day, count: v.instagram }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+
+    res.json({
+      facebook_today: fbToday,
+      facebook_week: fbWeek,
+      facebook_month: fbMonth,
+      instagram_today: igToday,
+      instagram_week: igWeek,
+      instagram_month: igMonth,
+      total,
+      dailyFacebook,
+      dailyInstagram,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/meta/leads — last 50 Meta leads (protected)
+router.get('/leads', authenticate, async (req, res) => {
+  try {
+    const leads = await prisma.lead.findMany({
+      where: { source: { in: ['FACEBOOK_ADS', 'INSTAGRAM'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        interestedCourse: true,
+        source: true,
+        createdAt: true,
+        status: true,
+        aiGrade: true,
+        aiScore: true,
+      },
+    });
+    res.json({ leads });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;

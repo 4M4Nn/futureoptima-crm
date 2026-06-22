@@ -1,0 +1,78 @@
+import { NavLink } from 'react-router-dom';
+import { LayoutDashboard, Users, GraduationCap, CreditCard, BarChart3, Bot, CheckSquare, Megaphone, MessageSquare, BookOpen, Settings, UserCog, ChevronLeft, ChevronRight, Zap, Share2, FileText } from 'lucide-react';
+import { useState } from 'react';
+import { useAuthStore } from '../../store/authStore';
+import clsx from 'clsx';
+
+const navItems = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/leads', icon: Users, label: 'Leads', badge: 'AI' },
+  { to: '/students', icon: GraduationCap, label: 'Students' },
+  { to: '/payments', icon: CreditCard, label: 'Payments' },
+  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { to: '/reports', icon: FileText, label: 'Reports' },
+  { to: '/meta', icon: Share2, label: 'Meta Ads', badge: 'Live' },
+  { to: '/ai', icon: Bot, label: 'AI Assistant' },
+  { to: '/tasks', icon: CheckSquare, label: 'Tasks' },
+  { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
+  { to: '/whatsapp', icon: MessageSquare, label: 'WhatsApp' },
+  { to: '/courses', icon: BookOpen, label: 'Courses' },
+  { to: '/users', icon: UserCog, label: 'Users', adminOnly: true },
+  { to: '/settings', icon: Settings, label: 'Settings' },
+];
+
+export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState(false);
+  const { user } = useAuthStore();
+
+  return (
+    <aside className={clsx('flex flex-col h-screen bg-white border-r border-gray-100 transition-all duration-300 z-20', collapsed ? 'w-16' : 'w-64')}>
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-100">
+        <div className="w-9 h-9 nexora-gradient rounded-xl flex items-center justify-center flex-shrink-0">
+          <Zap className="w-5 h-5 text-white" />
+        </div>
+        {!collapsed && (
+          <div>
+            <div className="font-bold text-nexora text-sm leading-tight">Future Optima CRM</div>
+            <div className="text-xs text-gray-400 leading-tight">AI-Powered Institute</div>
+          </div>
+        )}
+        <button onClick={() => setCollapsed(!collapsed)} className="ml-auto p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
+        {navItems.map((item) => {
+          if (item.adminOnly && !['SUPER_ADMIN', 'ADMIN'].includes(user?.role)) return null;
+          return (
+            <NavLink key={item.to} to={item.to} className={({ isActive }) => clsx(isActive ? 'sidebar-link-active' : 'sidebar-link-inactive', 'relative')}>
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {!collapsed && <span className="flex-1">{item.label}</span>}
+              {!collapsed && item.badge && (
+                <span className="text-xs bg-primary-600 text-white px-1.5 py-0.5 rounded-full font-semibold">{item.badge}</span>
+              )}
+            </NavLink>
+          );
+        })}
+      </nav>
+
+      {/* User */}
+      {!collapsed && (
+        <div className="p-3 border-t border-gray-100">
+          <div className="flex items-center gap-2 px-2 py-2 rounded-xl bg-gray-50">
+            <div className="w-8 h-8 nexora-gradient rounded-full flex items-center justify-center text-white text-xs font-bold">
+              {user?.name?.charAt(0)?.toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-gray-800 truncate">{user?.name}</div>
+              <div className="text-xs text-gray-400 truncate">{user?.role?.replace('_', ' ')}</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}

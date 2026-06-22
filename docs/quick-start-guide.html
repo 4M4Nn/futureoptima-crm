@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Future Optima CRM — Quick Start Guide</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #f8f9fc; }
+  .page { max-width: 900px; margin: 0 auto; background: white; }
+  @media print { body { background: white; } .no-print { display: none; } }
+
+  .header { background: linear-gradient(135deg, #1B2B6B 0%, #2D47B0 100%); color: white; padding: 40px 48px 32px; text-align: center; }
+  .header h1 { font-size: 32px; font-weight: 800; }
+  .header p { color: #93C5FD; margin-top: 8px; font-size: 15px; }
+
+  .steps { padding: 40px 48px; }
+  .step { display: flex; gap: 24px; margin-bottom: 40px; align-items: flex-start; }
+  .step:last-child { margin-bottom: 0; }
+  .step-num { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #1B2B6B, #2D47B0); color: white; font-size: 22px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 12px rgba(27,43,107,0.3); }
+  .step-content h2 { font-size: 20px; font-weight: 700; color: #1B2B6B; margin-bottom: 8px; }
+  .step-content p { font-size: 14px; color: #4B5563; line-height: 1.6; margin-bottom: 10px; }
+  .step-content .actions { display: flex; flex-direction: column; gap: 6px; }
+  .step-content .action { display: flex; gap: 8px; font-size: 13px; color: #374151; }
+  .step-content .action .arrow { color: #F59E0B; font-weight: 700; flex-shrink: 0; }
+  .step-content .action .text { flex: 1; }
+  .step-icon { font-size: 32px; margin-bottom: 4px; }
+
+  .tip-box { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; padding: 14px 16px; font-size: 13px; color: #92400E; margin-top: 12px; }
+  .tip-box strong { color: #B45309; }
+
+  .divider { border: none; border-top: 2px dashed #E5E7EB; margin: 24px 0; }
+
+  .creds-section { background: #EFF6FF; border-top: 3px solid #1B2B6B; padding: 28px 48px; }
+  .creds-section h3 { font-size: 16px; font-weight: 700; color: #1B2B6B; margin-bottom: 14px; }
+  .cred-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .cred-table th { background: #1B2B6B; color: white; padding: 8px 14px; text-align: left; }
+  .cred-table td { padding: 9px 14px; border-bottom: 1px solid #BFDBFE; font-family: monospace; }
+
+  .footer { background: #1B2B6B; color: #93C5FD; padding: 18px 48px; font-size: 12px; display: flex; justify-content: space-between; }
+  .footer strong { color: white; }
+
+  .print-btn { position: fixed; bottom: 24px; right: 24px; background: #F59E0B; color: #1a1a2e; border: none; padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div style="font-size:14px; color:#93C5FD; margin-bottom:8px;">⚡ FUTURE OPTIMA IT SOLUTIONS</div>
+    <h1>Quick Start Guide</h1>
+    <p>Get up and running with your new AI-powered CRM in 5 simple steps</p>
+  </div>
+
+  <div class="steps">
+
+    <!-- Step 1 -->
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <div class="step-icon">🔐</div>
+        <h2>Login to Your CRM</h2>
+        <p>Open your browser and go to your CRM URL. Use the admin credentials below to sign in. You'll see the dashboard with live stats immediately.</p>
+        <div class="actions">
+          <div class="action"><span class="arrow">→</span><span class="text">Visit: <strong>https://futureoptima-crm.vercel.app</strong></span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Email: admin@futureoptima.in</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Password: FutureOptima@2025</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Click "Sign In" — you're in!</span></div>
+        </div>
+        <div class="tip-box"><strong>Tip:</strong> Change your password immediately in Settings → My Profile → Change Password.</div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Step 2 -->
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <div class="step-icon">👤</div>
+        <h2>Add Your First Lead</h2>
+        <p>When a student walks in or calls, add them as a lead immediately. The AI will automatically score them as Hot/Warm/Cold within seconds.</p>
+        <div class="actions">
+          <div class="action"><span class="arrow">→</span><span class="text">Click <strong>Leads</strong> in the sidebar</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Click the <strong>+ Add Lead</strong> button (top right)</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Fill: Full Name, Phone Number, Lead Source, Course Interest</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Click <strong>+ Add Lead</strong> — AI scores it automatically!</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Click the lead name to see the full profile and AI analysis</span></div>
+        </div>
+        <div class="tip-box"><strong>Tip:</strong> Click <strong>Score All</strong> to re-score all existing leads at once. Hot leads = call immediately!</div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Step 3 -->
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <div class="step-icon">🎓</div>
+        <h2>Enroll a Student</h2>
+        <p>When a lead decides to join, convert them to a student with a course enrollment and installment plan — takes 30 seconds.</p>
+        <div class="actions">
+          <div class="action"><span class="arrow">→</span><span class="text">Open the lead → Click the gold <strong>Enroll</strong> button</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Select the <strong>Course</strong> (fee auto-fills)</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Enter <strong>Discount Amount</strong> if applicable (scholarship, referral, etc.)</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Select <strong>Number of Installments</strong> (1 to 12)</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">See the <strong>Net Fee</strong> calculated live → Click <strong>Confirm Enrollment</strong></span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Student appears in the Students section automatically!</span></div>
+        </div>
+        <div class="tip-box"><strong>Tip:</strong> The installment due dates are auto-created monthly from enrollment date. You can see them in Student Detail.</div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Step 4 -->
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <div class="step-icon">💰</div>
+        <h2>Record a Payment & Get Receipt</h2>
+        <p>When a student pays, record it in seconds and instantly download a professional PDF receipt with QR code verification.</p>
+        <div class="actions">
+          <div class="action"><span class="arrow">→</span><span class="text">Click <strong>Payments</strong> → <strong>Record Payment</strong></span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Type student's phone number → Click <strong>Search</strong></span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">See student details and click the installment to select it (amount auto-fills)</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Choose payment method (Cash/UPI/Bank/Cheque) and enter reference</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Click <strong>Record Payment</strong> → Click green <strong>Download Receipt PDF</strong></span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Print and give to the student. Done! ✅</span></div>
+        </div>
+        <div class="tip-box"><strong>Tip:</strong> You can also download receipts from Student Detail page → Payment History tab (Download button on each payment).</div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Step 5 -->
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        <div class="step-icon">📊</div>
+        <h2>Check Your Reports</h2>
+        <p>Every month, check your reports to track fee collection, course performance, and counselor conversion rates.</p>
+        <div class="actions">
+          <div class="action"><span class="arrow">→</span><span class="text">Click <strong>Reports</strong> in the sidebar</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text"><strong>Fee Collection</strong>: Pick a month → see daily chart and total collected</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text"><strong>Course Enrollment</strong>: See which courses are most popular</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text"><strong>Lead Sources</strong>: See where leads are coming from (Facebook, walk-in, etc.)</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text"><strong>Counselor Performance</strong>: See team conversion rates (Admin only)</span></div>
+          <div class="action"><span class="arrow">→</span><span class="text">Click <strong>Export CSV</strong> on any tab to download for Excel</span></div>
+        </div>
+        <div class="tip-box"><strong>Tip:</strong> Also check <strong>Meta Ads</strong> page to connect your Facebook & Instagram ads for automatic lead import.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Credentials -->
+  <div class="creds-section">
+    <h3>📋 Quick Reference — Login Details</h3>
+    <table class="cred-table">
+      <tr><th>Role</th><th>Email</th><th>Password</th></tr>
+      <tr><td>Super Admin</td><td>admin@futureoptima.in</td><td>FutureOptima@2025</td></tr>
+      <tr><td>Counselor</td><td>counselor@futureoptima.in</td><td>Counselor@123</td></tr>
+    </table>
+    <p style="margin-top:12px; font-size:12px; color:#1D4ED8;">Support: support@nexoraai.in | Built by Nexora AI Solutions</p>
+  </div>
+
+  <div class="footer">
+    <div><strong>Future Optima CRM</strong> v1.0 — Quick Start Guide</div>
+    <div>Built by <strong>Nexora AI Solutions</strong> • 2026</div>
+  </div>
+</div>
+
+<button class="print-btn no-print" onclick="window.print()">🖨️ Print Guide</button>
+</body>
+</html>

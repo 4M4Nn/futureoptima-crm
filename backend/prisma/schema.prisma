@@ -1,0 +1,441 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  DEMO_SCHEDULED
+  PROPOSAL_SENT
+  NEGOTIATION
+  WON
+  LOST
+  NURTURING
+}
+
+enum LeadSource {
+  FACEBOOK_ADS
+  GOOGLE_ADS
+  INSTAGRAM
+  WHATSAPP
+  REFERRAL
+  WALK_IN
+  WEBSITE
+  YOUTUBE
+  PHONE_CALL
+  EMAIL
+  OTHER
+}
+
+enum CourseId {
+  AI_ENGINEERING
+  DATA_SCIENCE_AI
+  AI_CYBERSECURITY
+  PYTHON_FULLSTACK
+  VIBE_CODING_SAAS
+  DATA_ANALYTICS
+  BUSINESS_ANALYTICS
+}
+
+enum CourseMode {
+  ONLINE
+  OFFLINE
+  HYBRID
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  DROPPED
+  ON_HOLD
+  DEFERRED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  CHEQUE
+  CARD
+  EMI
+}
+
+enum InstallmentStatus {
+  UPCOMING
+  DUE
+  PAID
+  OVERDUE
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum WhatsAppStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  COUNSELOR
+  FACULTY
+  ACCOUNTANT
+  VIEWER
+}
+
+enum AILeadGrade {
+  HOT
+  WARM
+  COLD
+  UNQUALIFIED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  role         UserRole @default(COUNSELOR)
+  avatar       String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  leads        Lead[]
+  tasks        Task[]
+  calls        CallLog[]
+  notes        Note[]
+  payments     Payment[]
+  campaigns    Campaign[]
+  aiSessions   AISession[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Lead {
+  id               String      @id @default(cuid())
+  name             String
+  email            String?
+  phone            String      @unique
+  altPhone         String?
+  dob              DateTime?
+  gender           String?
+  city             String?
+  district         String?
+  state            String      @default("Kerala")
+  address          String?
+  status           LeadStatus  @default(NEW)
+  source           LeadSource  @default(OTHER)
+  interestedCourse CourseId?
+  courseMode       CourseMode?
+  budget           Float?
+  expectedJoinDate DateTime?
+  aiGrade          AILeadGrade?
+  aiScore          Int?
+  aiSummary        String?
+  aiNextAction     String?
+  assignedToId     String?
+  assignedTo       User?       @relation(fields: [assignedToId], references: [id])
+  campaignId       String?
+  campaign         Campaign?   @relation(fields: [campaignId], references: [id])
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  firstContactAt   DateTime?
+  lastContactAt    DateTime?
+  nextFollowUpAt   DateTime?
+  convertedAt      DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  notes            Note[]
+  tasks            Task[]
+  calls            CallLog[]
+  whatsappMessages WhatsAppMessage[]
+  enrollment       Enrollment?
+  aiSessions       AISession[]
+  activities       ActivityLog[]
+
+  @@index([phone])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([interestedCourse])
+  @@index([aiGrade])
+  @@index([createdAt])
+  @@index([nextFollowUpAt])
+}
+
+model Course {
+  id              String     @id @default(cuid())
+  courseId        CourseId   @unique
+  name            String
+  shortName       String
+  description     String?
+  duration        String
+  totalHours      Int
+  fees            Float
+  emiAvailable    Boolean    @default(true)
+  maxInstallments Int        @default(6)
+  highlights      String[]
+  isActive        Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  enrollments     Enrollment[]
+  batches         Batch[]
+}
+
+model Batch {
+  id          String     @id @default(cuid())
+  courseId    String
+  course      Course     @relation(fields: [courseId], references: [id])
+  batchName   String
+  mode        CourseMode
+  startDate   DateTime
+  endDate     DateTime?
+  timings     String
+  capacity    Int        @default(30)
+  venue       String?
+  facultyName String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  enrollments Enrollment[]
+}
+
+model Enrollment {
+  id              String           @id @default(cuid())
+  leadId          String           @unique
+  lead            Lead             @relation(fields: [leadId], references: [id])
+  courseId        String
+  course          Course           @relation(fields: [courseId], references: [id])
+  batchId         String?
+  batch           Batch?           @relation(fields: [batchId], references: [id])
+  courseFee       Float
+  discountAmount  Float            @default(0)
+  discountReason  String?
+  netFee          Float
+  paidAmount      Float            @default(0)
+  balanceDue      Float
+  paymentStatus   PaymentStatus    @default(PENDING)
+  status          EnrollmentStatus @default(ACTIVE)
+  enrolledAt      DateTime         @default(now())
+  completedAt     DateTime?
+  certificateNo   String?
+  receiptNo       String           @unique
+  scholarshipName String?
+  scholarshipPct  Float?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  payments        Payment[]
+  installments    Installment[]
+  documents       Document[]
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  enrollmentId   String
+  enrollment     Enrollment    @relation(fields: [enrollmentId], references: [id])
+  installmentId  String?
+  installment    Installment?  @relation(fields: [installmentId], references: [id])
+  amount         Float
+  method         PaymentMethod
+  transactionId  String?
+  receiptNumber  String        @unique
+  paidAt         DateTime      @default(now())
+  remarks        String?
+  collectedById  String
+  collectedBy    User          @relation(fields: [collectedById], references: [id])
+  receiptSentAt  DateTime?
+  receiptMsgId   String?
+  createdAt      DateTime      @default(now())
+
+  @@index([enrollmentId])
+  @@index([paidAt])
+}
+
+model Installment {
+  id             String            @id @default(cuid())
+  enrollmentId   String
+  enrollment     Enrollment        @relation(fields: [enrollmentId], references: [id])
+  installmentNo  Int
+  amount         Float
+  dueDate        DateTime
+  status         InstallmentStatus @default(UPCOMING)
+  paidAt         DateTime?
+  reminderSentAt DateTime?
+  createdAt      DateTime          @default(now())
+
+  payments       Payment[]
+
+  @@index([enrollmentId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id])
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  content   String
+  isPrivate Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model Task {
+  id           String       @id @default(cuid())
+  leadId       String?
+  lead         Lead?        @relation(fields: [leadId], references: [id])
+  assignedToId String
+  assignedTo   User         @relation(fields: [assignedToId], references: [id])
+  title        String
+  description  String?
+  status       TaskStatus   @default(PENDING)
+  priority     TaskPriority @default(MEDIUM)
+  dueAt        DateTime
+  completedAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([dueAt])
+}
+
+model CallLog {
+  id         String   @id @default(cuid())
+  leadId     String
+  lead       Lead     @relation(fields: [leadId], references: [id])
+  calledById String
+  calledBy   User     @relation(fields: [calledById], references: [id])
+  duration   Int?
+  outcome    String?
+  notes      String?
+  calledAt   DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model WhatsAppMessage {
+  id          String         @id @default(cuid())
+  leadId      String?
+  lead        Lead?          @relation(fields: [leadId], references: [id])
+  campaignId  String?
+  campaign    Campaign?      @relation(fields: [campaignId], references: [id])
+  to          String
+  templateName String?
+  body        String
+  mediaUrl    String?
+  status      WhatsAppStatus @default(QUEUED)
+  twilioSid   String?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  failReason  String?
+  createdAt   DateTime       @default(now())
+
+  @@index([leadId])
+  @@index([status])
+}
+
+model Campaign {
+  id              String      @id @default(cuid())
+  name            String
+  description     String?
+  targetCourse    CourseId?
+  targetGrade     AILeadGrade?
+  messageTemplate String
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  createdById     String
+  createdBy       User        @relation(fields: [createdById], references: [id])
+  totalSent       Int         @default(0)
+  totalDelivered  Int         @default(0)
+  totalRead       Int         @default(0)
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+
+  leads           Lead[]
+  messages        WhatsAppMessage[]
+}
+
+model AISession {
+  id        String   @id @default(cuid())
+  leadId    String?
+  lead      Lead?    @relation(fields: [leadId], references: [id])
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  prompt    String
+  response  String
+  model     String   @default("llama3.2")
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  leadId    String?
+  lead      Lead?    @relation(fields: [leadId], references: [id])
+  userId    String?
+  action    String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([createdAt])
+}
+
+model Document {
+  id           String     @id @default(cuid())
+  enrollmentId String
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id])
+  name         String
+  type         String
+  url          String
+  uploadedAt   DateTime   @default(now())
+}
+
+model SystemSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

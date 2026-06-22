@@ -1,0 +1,21 @@
+{
+  "name": "nexora-crm",
+  "version": "1.0.0",
+  "description": "Nexora AI CRM — Production system for Future Optima IT Solutions",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n BACKEND,FRONTEND -c cyan,magenta \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "db:push": "cd backend && npx prisma db push",
+    "db:generate": "cd backend && npx prisma generate",
+    "db:seed": "cd backend && node src/utils/seed.js",
+    "db:studio": "cd backend && npx prisma studio",
+    "build": "cd frontend && npm run build",
+    "setup": "npm run install:all && cd backend && npx prisma generate"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
