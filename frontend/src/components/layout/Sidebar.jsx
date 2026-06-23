@@ -14,7 +14,7 @@ const navItems = [
   { to: '/payments', icon: CreditCard, label: 'Payments' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/reports', icon: FileText, label: 'Reports' },
-  { to: '/meta', icon: Share2, label: 'Meta Ads', badge: 'Live' },
+  { to: '/meta', icon: Share2, label: 'Meta Ads', metaBadge: true },
   { to: '/ai', icon: Bot, label: 'AI Assistant' },
   { to: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
@@ -41,6 +41,14 @@ export default function Sidebar() {
     staleTime: 30000,
   });
   const followupCount = (overdueData?.count || 0) + (todayData?.count || 0);
+
+  const { data: metaStats } = useQuery({
+    queryKey: ['meta-stats-dash'],
+    queryFn: () => api.get('/meta/stats').then(r => r.data),
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+  const metaCount = (metaStats?.facebook_today || 0) + (metaStats?.instagram_today || 0);
 
   return (
     <aside className={clsx('flex flex-col h-screen bg-white border-r border-gray-100 transition-all duration-300 z-20', collapsed ? 'w-16' : 'w-64')}>
@@ -70,6 +78,9 @@ export default function Sidebar() {
               {!collapsed && <span className="flex-1">{item.label}</span>}
               {!collapsed && item.followupBadge && followupCount > 0 && (
                 <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold min-w-[20px] text-center">{followupCount}</span>
+              )}
+              {!collapsed && item.metaBadge && metaCount > 0 && (
+                <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-bold min-w-[20px] text-center">{metaCount}</span>
               )}
               {!collapsed && item.badge && (
                 <span className="text-xs bg-primary-600 text-white px-1.5 py-0.5 rounded-full font-semibold">{item.badge}</span>

@@ -2,6 +2,7 @@ import express from 'express';
 import { prisma } from '../utils/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { scoreLeadWithOllama } from '../services/ollamaService.js';
+import { logActivity } from '../utils/activityLogger.js';
 
 const router = express.Router();
 
@@ -139,6 +140,35 @@ router.post('/webhook', async (req, res) => {
     }
   } catch (err) {
     console.error('[Meta] Webhook processing error:', err.message);
+  }
+});
+
+// POST /api/meta/whatsapp-lead — manually add lead from WhatsApp conversation
+router.post('/whatsapp-lead', authenticate, async (req, res) => {
+  try {
+    const { name, phone, message, source, interestedCourse } = req.body;
+    if (!name || !phone) return res.status(400).json({ error: 'Name and phone required' });
+
+    const existing = await prisma.lead.findUnique({ where: { phone: phone.trim() } });
+    if (existing) return res.status(409).json({ error: 'Lead already exists', leadId: existing.id });
+
+    const lead = await prisma.lead.create({
+      data: {
+        name: name.trim(),
+        phone: phone.trim(),
+        source: source === 'INSTAGRAM' ? 'INSTAGRAM' : 'FACEBOOK_ADS',
+        interestedCourse: interestedCourse || null,
+        status: 'NEW',
+        assignedToId: req.user.id,
+      },
+    });
+
+    scoreLeadWithOllama(lead.id).catch(console.error);
+    await logActivity(lead.id, req.user.id, 'LEAD_CREATED', { source: lead.source, message });
+
+    res.status(201).json(lead);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

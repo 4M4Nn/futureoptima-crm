@@ -1,39 +1,23 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Share2, Copy, RefreshCw, CheckCircle, ArrowUpRight, Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { RefreshCw, ArrowUpRight, Loader2, Plus, MessageCircle, Wifi, CheckCircle } from 'lucide-react';
 import api from '../utils/api';
 import { timeAgo } from '../utils/constants';
-import { LoadingState, GradeBadge } from '../components/ui/index';
+import { GradeBadge, LoadingState } from '../components/ui/index';
 import toast from 'react-hot-toast';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'https://YOUR_BACKEND_URL';
-const WEBHOOK_URL = `${BACKEND_URL}/api/meta/webhook`;
-const VERIFY_TOKEN = 'futureoptima_meta_2025';
-const APP_ID = '1314736140263066';
+const COURSES = [
+  { value: 'AI_ENGINEERING', label: 'AI Engineering & Automation' },
+  { value: 'DATA_SCIENCE_AI', label: 'Data Science with AI' },
+  { value: 'AI_CYBERSECURITY', label: 'AI-Powered Cybersecurity' },
+  { value: 'PYTHON_FULLSTACK', label: 'Python Full Stack with AI' },
+  { value: 'VIBE_CODING_SAAS', label: 'Vibe Coding & SaaS Dev' },
+  { value: 'DATA_ANALYTICS', label: 'Data Analytics' },
+  { value: 'BUSINESS_ANALYTICS', label: 'Business Analytics' },
+];
 
-function CopyField({ label, value, note }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(value);
-    setCopied(true);
-    toast.success('Copied!');
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
-      <div className="text-xs text-gray-500 mb-1.5 font-medium">{label}</div>
-      <div className="flex items-center gap-2">
-        <code className="text-xs text-gray-800 flex-1 break-all font-mono bg-white px-2 py-1.5 rounded-lg border border-gray-100">{value}</code>
-        <button onClick={copy} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0" title="Copy">
-          {copied ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
-        </button>
-      </div>
-      {note && <p className="text-xs text-amber-600 mt-1.5 leading-relaxed">{note}</p>}
-    </div>
-  );
-}
+const INITIAL_FORM = { name: '', phone: '', source: 'FACEBOOK_ADS', interestedCourse: '', message: '' };
 
 function AnimatedNumber({ value }) {
   const [display, setDisplay] = useState(0);
@@ -58,53 +42,29 @@ function AnimatedNumber({ value }) {
   return <>{display}</>;
 }
 
-const FB_STEPS = [
-  'Go to business.facebook.com/adsmanager',
-  'Click Create → Lead generation campaign',
-  'Select Future Optima IT Solutions page',
-  'In Instant Form, add these fields:\n  • Full Name\n  • Phone Number\n  • Email Address\n  • Custom question: "Which course are you interested in?"',
-  'Add dropdown options:\n  AI Engineering & Automation\n  Data Science with AI\n  AI-Powered Cybersecurity\n  Python Full Stack with AI\n  Vibe Coding & SaaS Development\n  Data Analytics\n  Business Analytics',
-  'Go to developers.facebook.com',
-  'Open Future Optima CRM app (App ID: 1314736140263066)',
-  'Use Cases → Capture & manage ad leads → Webhooks',
-  'Click Add Callback URL',
-  'Paste the Webhook URL and Verify Token from above',
-  'Click Verify and Save',
-  'Subscribe to the leadgen field',
-  '🎉 Publish your Lead Ad — every new lead appears in CRM within seconds!',
-];
-
-const IG_STEPS = [
-  'Go to Future Optima Instagram business account',
-  'Settings → Account → Switch to Professional Account (if not done)',
-  'Connect Instagram to the Future Optima Facebook Page',
-  'Go to Meta Ads Manager → Create Campaign → Lead generation',
-  'Select Instagram as the placement for your ad',
-  'Use the same Instant Form as Facebook (same fields)',
-  'The same webhook above automatically receives Instagram leads too',
-  '🎉 Instagram leads appear with pink 📸 IG badge in the CRM',
-];
-
 export default function MetaAdsPage() {
-  const [setupTab, setSetupTab] = useState('facebook');
+  const [form, setForm] = useState(INITIAL_FORM);
+  const [successLead, setSuccessLead] = useState(null);
+  const [duplicateLeadId, setDuplicateLeadId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [countdown, setCountdown] = useState(30);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
-  const [countdown, setCountdown] = useState(30);
+  const formRef = useRef(null);
+  const queryClient = useQueryClient();
 
-  const { data: stats, isLoading: statsLoading, isFetching: statsFetching } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['meta-stats', refreshKey],
     queryFn: () => api.get('/meta/stats').then(r => r.data),
     refetchInterval: 30000,
   });
 
-  const { data: leadsData, isLoading: leadsLoading, isFetching: leadsFetching, refetch, dataUpdatedAt } = useQuery({
+  const { data: leadsData, isLoading: leadsLoading, isFetching: leadsFetching, dataUpdatedAt } = useQuery({
     queryKey: ['meta-leads', refreshKey],
     queryFn: () => api.get('/meta/leads').then(r => r.data),
     refetchInterval: 30000,
   });
 
-  const isFetching = statsFetching || leadsFetching;
   const leads = leadsData?.leads || [];
 
   useEffect(() => {
@@ -114,255 +74,329 @@ export default function MetaAdsPage() {
   useEffect(() => {
     if (!lastUpdated) return;
     setCountdown(30);
-    const timer = setInterval(() => setCountdown(c => (c > 0 ? c - 1 : 0)), 1000);
-    return () => clearInterval(timer);
+    const t = setInterval(() => setCountdown(c => (c > 0 ? c - 1 : 0)), 1000);
+    return () => clearInterval(t);
   }, [lastUpdated]);
 
   useEffect(() => {
     if (!lastUpdated) return;
-    const timer = setInterval(() => setSecondsAgo(Math.floor((Date.now() - lastUpdated) / 1000)), 1000);
-    return () => clearInterval(timer);
+    const t = setInterval(() => setSecondsAgo(Math.floor((Date.now() - lastUpdated) / 1000)), 1000);
+    return () => clearInterval(t);
   }, [lastUpdated]);
 
-  // Build daily chart data from stats
-  const dailyChartData = useMemo(() => {
-    if (!stats?.dailyFacebook?.length && !stats?.dailyInstagram?.length) return [];
-    const days = {};
-    (stats.dailyFacebook || []).forEach(d => {
-      days[d.day] = { day: d.day.slice(8), facebook: d.count, instagram: 0 };
-    });
-    (stats.dailyInstagram || []).forEach(d => {
-      if (!days[d.day]) days[d.day] = { day: d.day.slice(8), facebook: 0, instagram: 0 };
-      days[d.day].instagram = d.count;
-    });
-    return Object.values(days).sort((a, b) => a.day.localeCompare(b.day));
-  }, [stats]);
+  const addLead = useMutation({
+    mutationFn: (data) => api.post('/meta/whatsapp-lead', data).then(r => r.data),
+    onSuccess: (lead) => {
+      setSuccessLead(lead);
+      setDuplicateLeadId(null);
+      queryClient.invalidateQueries({ queryKey: ['meta-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['meta-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['meta-stats-dash'] });
+      setTimeout(() => {
+        setSuccessLead(null);
+        setForm(INITIAL_FORM);
+      }, 5000);
+    },
+    onError: (err) => {
+      if (err.response?.status === 409) {
+        setDuplicateLeadId(err.response.data.leadId);
+      } else {
+        toast.error(err.response?.data?.error || 'Failed to add lead');
+      }
+    },
+  });
 
-  const fbDailyArr = stats?.dailyFacebook || [];
-  const igDailyArr = stats?.dailyInstagram || [];
-  const yesterdayFB = fbDailyArr.length >= 2 ? (fbDailyArr[fbDailyArr.length - 2]?.count ?? 0) : 0;
-  const yesterdayIG = igDailyArr.length >= 2 ? (igDailyArr[igDailyArr.length - 2]?.count ?? 0) : 0;
-  const fbTrend = (stats?.facebook_today ?? 0) - yesterdayFB;
-  const igTrend = (stats?.instagram_today ?? 0) - yesterdayIG;
+  const setField = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }));
+    setSuccessLead(null);
+    setDuplicateLeadId(null);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.phone.trim()) {
+      toast.error('Name and phone number are required');
+      return;
+    }
+    addLead.mutate(form);
+  };
 
   const STAT_CARDS = [
     {
       label: 'Facebook Leads Today',
       value: stats?.facebook_today ?? 0,
-      iconEl: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-white font-bold text-xl">f</span>,
+      icon: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-white font-bold text-xl">f</span>,
       gradient: 'from-[#1877F2] to-[#166FE5]',
-      trend: fbTrend,
-      sub: `${stats?.facebook_week ?? 0} this week`,
     },
     {
       label: 'Instagram Leads Today',
       value: stats?.instagram_today ?? 0,
-      iconEl: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">📸</span>,
+      icon: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">📸</span>,
       gradient: 'from-[#E1306C] to-[#833AB4]',
-      trend: igTrend,
-      sub: `${stats?.instagram_week ?? 0} this week`,
     },
     {
       label: 'Total This Month',
       value: (stats?.facebook_month ?? 0) + (stats?.instagram_month ?? 0),
-      iconEl: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">📅</span>,
+      icon: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">📅</span>,
       gradient: 'from-indigo-600 to-purple-600',
-      trend: null,
-      sub: 'FB + IG combined',
     },
     {
       label: 'All Time Total',
       value: stats?.total ?? 0,
-      iconEl: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">🏆</span>,
+      icon: <span className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg">🏆</span>,
       gradient: 'from-amber-500 to-yellow-400',
-      trend: null,
-      sub: 'all Meta leads',
     },
   ];
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Header */}
       <div>
-        <h1 className="page-title">Meta Ads Integration</h1>
-        <p className="text-gray-500 text-sm">Facebook & Instagram lead ads — auto-imported and AI-scored in real time</p>
-        <div className="flex items-center gap-2 mt-2">
-          <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-3 py-1.5">
+        <h1 className="page-title">Meta Ads — Facebook & Instagram</h1>
+        <p className="text-gray-500 text-sm mt-1">Click-to-WhatsApp Campaign Lead Management</p>
+        <div className="mt-2">
+          <span className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-3 py-1.5">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             <span className="text-xs font-semibold text-green-700">Live — receiving leads in real time</span>
           </span>
         </div>
       </div>
 
-      {/* Section 1: Stat Cards */}
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {STAT_CARDS.map(({ label, value, iconEl, gradient, trend, sub }) => (
+        {STAT_CARDS.map(({ label, value, icon, gradient }) => (
           <div key={label} className={`rounded-2xl p-5 bg-gradient-to-br ${gradient} text-white shadow-lg`}>
-            <div className="flex items-center mb-2">{iconEl}</div>
+            <div className="flex items-center mb-2">{icon}</div>
             <div className="text-4xl font-bold mt-1">
               {statsLoading ? '—' : <AnimatedNumber value={value} />}
             </div>
             <div className="text-sm font-semibold mt-1 text-white/90">{label}</div>
-            <div className="text-xs text-white/70 mt-2 flex items-center gap-1">
-              {trend !== null && trend !== undefined ? (
-                trend >= 0
-                  ? <><TrendingUp className="w-3 h-3" /><span>+{trend} vs yesterday</span></>
-                  : <><TrendingDown className="w-3 h-3" /><span>{trend} vs yesterday</span></>
-              ) : <span>{sub}</span>}
-            </div>
           </div>
         ))}
       </div>
 
-      {/* Section 2: Connection Status + Webhook Setup */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Meta Integration Status */}
-        <div className="card p-5 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-green-100 rounded-xl flex items-center justify-center">
-              <Share2 className="w-5 h-5 text-green-600" />
-            </div>
-            <h3 className="section-title">Meta Integration Status</h3>
-            <div className="ml-auto flex items-center gap-1.5">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-xs font-semibold text-green-600">Connected</span>
-            </div>
-          </div>
-          <div className="space-y-0">
-            {[
-              ['App ID', APP_ID],
-              ['Status', 'Connected ✅'],
-              ['Permissions', 'ads_read, leads_retrieval, pages_read_engagement'],
-              ['Institute', 'Future Optima IT Solutions'],
-              ['Phone', '+91-8891129333'],
-              ['Email', 'info@futureoptimaitsolutions.com'],
-            ].map(([k, v]) => (
-              <div key={k} className="flex justify-between py-2.5 border-b border-gray-50 last:border-0">
-                <span className="text-xs text-gray-400 font-medium">{k}</span>
-                <span className="text-xs font-medium text-gray-800 text-right max-w-[58%]">{v}</span>
+      {/* Two-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Left: Add Lead form (60%) */}
+        <div className="lg:col-span-3" ref={formRef}>
+          <div className="card overflow-hidden">
+            <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-5 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                  <MessageCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">Someone messaged from your ad?</h3>
+                  <p className="text-green-100 text-sm">Add them to CRM instantly</p>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: Webhook Configuration */}
-        <div className="card p-5 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center">
-              <Share2 className="w-5 h-5 text-blue-600" />
             </div>
-            <h3 className="section-title">Webhook Configuration</h3>
-          </div>
-          <CopyField
-            label="Webhook URL — paste in Facebook Developer Console"
-            value={WEBHOOK_URL}
-            note="Note: Replace YOUR_BACKEND_URL with your Render backend URL after deployment."
-          />
-          <CopyField label="Verify Token" value={VERIFY_TOKEN} />
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 leading-relaxed">
-            <strong>After setup:</strong> Subscribe to the <strong>leadgen</strong> field in your Facebook App → Webhook settings. New leads will appear here within seconds of form submission.
+
+            <div className="p-5">
+              {successLead && (
+                <div className="mb-5 bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <span className="font-bold text-green-700">✅ Lead Added Successfully!</span>
+                  </div>
+                  <p className="text-sm text-green-700 mb-1">{successLead.name} has been added to CRM</p>
+                  <p className="text-xs text-green-600 mb-3">🤖 AI is scoring this lead now...</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setSuccessLead(null); setForm(INITIAL_FORM); }}
+                      className="btn-secondary text-xs flex-1"
+                    >
+                      Add Another Lead
+                    </button>
+                    <Link
+                      to={`/leads/${successLead.id}`}
+                      className="btn-primary text-xs flex-1 flex items-center justify-center gap-1"
+                    >
+                      View Lead <ArrowUpRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              {duplicateLeadId && (
+                <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-4">
+                  <p className="font-bold text-orange-700 mb-2">⚠️ This number already exists in CRM</p>
+                  <Link
+                    to={`/leads/${duplicateLeadId}`}
+                    className="text-sm text-orange-700 hover:text-orange-800 font-medium flex items-center gap-1 w-fit"
+                  >
+                    View existing lead <ArrowUpRight className="w-3 h-3" />
+                  </Link>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Full Name *</label>
+                    <input
+                      className="input w-full"
+                      value={form.name}
+                      onChange={e => setField('name', e.target.value)}
+                      placeholder="Customer's name"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="label">WhatsApp Number *</label>
+                    <input
+                      className="input w-full"
+                      value={form.phone}
+                      onChange={e => setField('phone', e.target.value)}
+                      placeholder="9876543210"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Ad Source</label>
+                  <div className="grid grid-cols-2 gap-3 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setField('source', 'FACEBOOK_ADS')}
+                      className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-semibold text-sm transition-all ${
+                        form.source === 'FACEBOOK_ADS'
+                          ? 'bg-[#1877F2] border-[#1877F2] text-white'
+                          : 'border-gray-200 text-gray-600 hover:border-blue-300'
+                      }`}
+                    >
+                      <span className="font-bold text-base">f</span> Facebook Ad
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setField('source', 'INSTAGRAM')}
+                      className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-semibold text-sm transition-all ${
+                        form.source === 'INSTAGRAM'
+                          ? 'border-transparent text-white'
+                          : 'border-gray-200 text-gray-600 hover:border-pink-300'
+                      }`}
+                      style={form.source === 'INSTAGRAM' ? { background: 'linear-gradient(135deg, #E1306C, #833AB4)' } : {}}
+                    >
+                      📸 Instagram Ad
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Course Interest</label>
+                  <select
+                    className="input w-full"
+                    value={form.interestedCourse}
+                    onChange={e => setField('interestedCourse', e.target.value)}
+                  >
+                    <option value="">Not specified</option>
+                    {COURSES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label">Their Message</label>
+                  <textarea
+                    className="input w-full resize-none"
+                    rows={3}
+                    value={form.message}
+                    onChange={e => setField('message', e.target.value)}
+                    placeholder="What did they say on WhatsApp? e.g. 'Hi I saw your ad, interested in AI course'"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={addLead.isPending}
+                  className="w-full py-3 rounded-xl text-white font-bold text-base flex items-center justify-center gap-2 transition-opacity hover:opacity-90 disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg, #F59E0B, #D97706)' }}
+                >
+                  {addLead.isPending
+                    ? <><Loader2 className="w-5 h-5 animate-spin" />Adding...</>
+                    : <>➕ Add to CRM</>
+                  }
+                </button>
+              </form>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Section 3: Setup Instructions Tabs */}
-      <div className="card overflow-hidden">
-        <div className="flex border-b border-gray-100">
-          <button
-            onClick={() => setSetupTab('facebook')}
-            className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors ${setupTab === 'facebook' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-            <span className="w-5 h-5 bg-blue-600 rounded text-white text-xs flex items-center justify-center font-bold flex-shrink-0">f</span>
-            Facebook Lead Ads Setup
-          </button>
-          <button
-            onClick={() => setSetupTab('instagram')}
-            className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors ${setupTab === 'instagram' ? 'border-pink-600 text-pink-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-            <span className="text-base">📸</span>
-            Instagram Lead Ads Setup
-          </button>
-        </div>
-        <div className="p-5">
-          <ol className="space-y-3">
-            {(setupTab === 'facebook' ? FB_STEPS : IG_STEPS).map((step, i) => (
-              <li key={i} className="flex gap-3">
-                <span className={`w-6 h-6 rounded-full font-bold text-xs flex items-center justify-center flex-shrink-0 mt-0.5 ${setupTab === 'facebook' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
-                  {i + 1}
-                </span>
-                <span className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{step}</span>
-              </li>
-            ))}
-          </ol>
-
-          {/* Course mapping */}
-          <div className="mt-6 pt-5 border-t border-gray-100">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Auto Course Mapping</div>
-            <div className="grid grid-cols-2 gap-x-6">
+        {/* Right: Info cards (40%) */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="card p-5">
+            <h3 className="section-title mb-4">How it works</h3>
+            <div className="space-y-3">
               {[
-                ['AI Engineering & Automation', 'AI Engineering'],
-                ['Data Science with AI', 'Data Science + AI'],
-                ['AI-Powered Cybersecurity', 'AI Cybersecurity'],
-                ['Python Full Stack with AI', 'Python Full Stack'],
-                ['Vibe Coding & SaaS Development', 'Vibe Coding & SaaS'],
-                ['Data Analytics', 'Data Analytics'],
-                ['Business Analytics', 'Business Analytics'],
-              ].map(([from, to]) => (
-                <div key={to} className="flex items-center gap-1.5 py-1 border-b border-gray-50 last:border-0 text-xs">
-                  <span className="text-gray-400 flex-1 truncate">"{from}"</span>
-                  <span className="text-gray-300">→</span>
-                  <span className="font-medium text-primary-700 flex-shrink-0">{to}</span>
+                { icon: '📱', step: 'Run Facebook/Instagram ad' },
+                { icon: '💬', step: 'Customer messages on WhatsApp' },
+                { icon: '➕', step: 'Add them here immediately' },
+                { icon: '🤖', step: 'AI scores the lead automatically' },
+                { icon: '📞', step: 'Follow up from CRM' },
+              ].map(({ icon, step }, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-primary-50 rounded-lg flex items-center justify-center text-base flex-shrink-0">{icon}</div>
+                  <div>
+                    <span className="text-xs font-semibold text-gray-400 mr-1.5">Step {i + 1}</span>
+                    <span className="text-sm text-gray-700">{step}</span>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
+
+          <div className="card p-5">
+            <h3 className="section-title mb-4">Connection Status</h3>
+            <div className="space-y-0">
+              {[
+                ['Meta App', 'Connected ✅'],
+                ['App ID', '1314736140263066'],
+                ['Facebook', 'Connected'],
+                ['Instagram', 'Connected'],
+                ['Webhook', 'Active (for Lead Form ads)'],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between py-2.5 border-b border-gray-50 last:border-0">
+                  <span className="text-xs text-gray-400 font-medium">{k}</span>
+                  <span className="text-xs font-medium text-gray-800">{v}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center gap-1.5">
+              <Wifi className="w-3 h-3 text-green-500" />
+              <span className="text-xs text-green-600 font-semibold">Meta webhook active</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Section 5: Monthly Stats Chart */}
-      {dailyChartData.length > 0 && (
-        <div className="card p-5">
-          <h3 className="section-title mb-4">This Month — Daily Leads</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={dailyChartData} margin={{ top: 0, right: 10, left: -15, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="day" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="facebook" name="Facebook" fill="#1877F2" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="instagram" name="Instagram" fill="#E1306C" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* Section 4: Recent Meta Leads Table */}
+      {/* Recent Meta Leads */}
       <div className="card overflow-hidden">
         <div className="card-header flex items-center justify-between">
-          <h3 className="section-title">Recent Leads from Facebook & Instagram</h3>
+          <h3 className="section-title">Recent Facebook & Instagram Leads</h3>
           <div className="flex items-center gap-3">
-            {lastUpdated && !isFetching && (
+            {lastUpdated && !leadsFetching && (
               <span className="text-xs text-gray-400">Updated {secondsAgo}s ago</span>
             )}
             <button
               onClick={() => setRefreshKey(k => k + 1)}
-              disabled={isFetching}
-              className="btn-secondary text-xs disabled:opacity-60"
+              disabled={leadsFetching}
+              className="btn-secondary text-xs disabled:opacity-60 flex items-center gap-1.5"
             >
-              {isFetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-              {isFetching ? 'Refreshing...' : 'Refresh'}
+              {leadsFetching
+                ? <><Loader2 className="w-3 h-3 animate-spin" />Refreshing...</>
+                : <><RefreshCw className="w-3 h-3" />Refresh</>
+              }
             </button>
           </div>
         </div>
+
         {leadsLoading ? (
           <LoadingState />
         ) : !leads.length ? (
           <div className="p-10 text-center text-gray-400">
-            <Share2 className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-20" />
             <p className="text-sm font-medium">No Meta leads yet.</p>
-            <p className="text-xs mt-1 max-w-sm mx-auto">
-              Complete the setup above to start receiving leads automatically from your Facebook and Instagram ads.
-            </p>
+            <p className="text-xs mt-1">When someone messages from your ad, add them using the form above!</p>
           </div>
         ) : (
           <>
@@ -370,7 +404,7 @@ export default function MetaAdsPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    {['Name', 'Phone', 'Course Interest', 'Source', 'AI Grade', 'Received', 'Actions'].map(h => (
+                    {['Name', 'Phone', 'Course', 'Source', 'AI Grade', 'Added', 'Actions'].map(h => (
                       <th key={h} className="px-4 py-3 text-left table-header">{h}</th>
                     ))}
                   </tr>
@@ -384,17 +418,22 @@ export default function MetaAdsPage() {
                         {lead.interestedCourse?.replace(/_/g, ' ') || '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${lead.source === 'FACEBOOK_ADS' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
-                          {lead.source === 'FACEBOOK_ADS' ? '📘 Facebook' : '📸 Instagram'}
-                        </span>
+                        {lead.source === 'FACEBOOK_ADS' ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">📘 Facebook</span>
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-pink-100 text-pink-700">📸 Instagram</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <GradeBadge grade={lead.aiGrade} score={lead.aiScore} />
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400">{timeAgo(lead.createdAt)}</td>
                       <td className="px-4 py-3">
-                        <Link to={`/leads/${lead.id}`} className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1 font-medium">
-                          View Lead <ArrowUpRight className="w-3 h-3" />
+                        <Link
+                          to={`/leads/${lead.id}`}
+                          className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1 font-medium"
+                        >
+                          View <ArrowUpRight className="w-3 h-3" />
                         </Link>
                       </td>
                     </tr>
@@ -404,11 +443,43 @@ export default function MetaAdsPage() {
             </div>
             <div className="px-4 py-2.5 border-t border-gray-50 flex items-center justify-between">
               <span className="text-xs text-gray-400">Last 50 leads</span>
-              <span className="text-xs text-gray-400">Auto-refreshes every 30 seconds · Next in {countdown}s</span>
+              <span className="text-xs text-gray-400">
+                Auto-refreshes every 30 seconds · Next in {countdown}s
+              </span>
             </div>
           </>
         )}
       </div>
+
+      {/* Pro Tips */}
+      <div className="card p-5">
+        <h3 className="section-title mb-4">💡 Pro Tips for WhatsApp Lead Capture</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[
+            'Add leads immediately while the conversation is fresh',
+            'Note the course they mentioned in the message field',
+            'AI will automatically score the lead within seconds',
+            'Set a follow-up date right after adding the lead',
+          ].map((tip, i) => (
+            <div key={i} className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+              <span className="w-6 h-6 bg-amber-500 rounded-full text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                {i + 1}
+              </span>
+              <span className="text-sm text-amber-800">{tip}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Floating Quick Add button */}
+      <button
+        onClick={() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform z-40"
+        style={{ background: 'linear-gradient(135deg, #F59E0B, #D97706)' }}
+        title="Quick Add Lead"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
     </div>
   );
 }
