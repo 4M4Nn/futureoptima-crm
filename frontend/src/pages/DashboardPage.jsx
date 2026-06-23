@@ -252,90 +252,101 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Meta Ads Live Feed */}
+      {/* Meta Ads Live Dashboard */}
       <div className="card overflow-hidden">
-        <div className="p-5 text-white" style={{ background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 100%)' }}>
-          <div className="flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse flex-shrink-0" />
-            <h3 className="text-lg font-bold tracking-tight">Meta Ads — Live Feed</h3>
+        {/* Header */}
+        <div
+          className="px-5 py-4 text-white flex items-center justify-between"
+          style={{ background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 100%)' }}
+        >
+          <div>
+            <div className="font-bold text-base leading-tight">Meta Ads</div>
+            <div className="text-white/80 text-sm">Facebook & Instagram</div>
           </div>
-          <p className="text-white/75 text-sm mt-1">Facebook & Instagram leads — updates every 30 seconds</p>
-        </div>
-
-        <div className="p-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left: Stats */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xl flex-shrink-0" style={{ background: '#1877F2' }}>f</div>
-                <div>
-                  <div className="text-2xl font-bold text-blue-700">{metaStats?.facebook_today ?? 0}</div>
-                  <div className="text-xs text-gray-500">Facebook Leads Today</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'linear-gradient(135deg, #fce4ec 0%, #f3e5f5 100%)' }}>
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xs flex-shrink-0" style={{ background: 'linear-gradient(135deg, #E1306C, #833AB4)' }}>IG</div>
-                <div>
-                  <div className="text-2xl font-bold" style={{ color: '#E1306C' }}>{metaStats?.instagram_today ?? 0}</div>
-                  <div className="text-xs text-gray-500">Instagram Leads Today</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-xl">
-                <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white text-lg flex-shrink-0">📅</div>
-                <div>
-                  <div className="text-2xl font-bold text-indigo-700">{(metaStats?.facebook_month ?? 0) + (metaStats?.instagram_month ?? 0)}</div>
-                  <div className="text-xs text-gray-500">This Month Total</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl">
-                <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0">%</div>
-                <div>
-                  <div className="text-2xl font-bold text-green-700">{ov.conversionRate ?? 0}%</div>
-                  <div className="text-xs text-gray-500">Conversion from Meta</div>
-                </div>
-              </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+              <span className="text-sm font-semibold">Live</span>
             </div>
-
-            {/* Right: Last 5 leads */}
-            <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Last 5 Meta Leads</div>
-              <div className="space-y-2">
-                {(metaLeadsData?.leads || []).slice(0, 5).map(lead => (
-                  <div key={lead.id} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{lead.name}</div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        {lead.source === 'FACEBOOK_ADS' ? (
-                          <span className="text-xs px-1.5 py-0.5 rounded font-bold text-white" style={{ background: '#1877F2' }}>FB</span>
-                        ) : (
-                          <span className="text-xs px-1.5 py-0.5 rounded font-bold text-white" style={{ background: 'linear-gradient(135deg, #E1306C, #833AB4)' }}>IG</span>
-                        )}
-                        <span className="text-xs text-gray-400">{timeAgo(lead.createdAt)}</span>
-                      </div>
-                    </div>
-                    <GradeBadge grade={lead.aiGrade} score={lead.aiScore} />
-                    <Link to={`/leads/${lead.id}`} className="text-xs text-primary-600 hover:text-primary-700 font-medium whitespace-nowrap flex items-center gap-0.5">
-                      View <ArrowUpRight className="w-3 h-3" />
-                    </Link>
-                  </div>
-                ))}
-                {!(metaLeadsData?.leads?.length) && (
-                  <div className="text-center text-gray-400 text-sm py-8">No Meta leads yet</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            <Link
-              to="/meta"
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm text-white transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 100%)' }}
-            >
-              View All Meta Leads
-              <ArrowUpRight className="w-4 h-4" />
+            <Link to="/meta" className="text-sm text-white/90 hover:text-white font-semibold flex items-center gap-0.5">
+              View All <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
           </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left: Stats */}
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
+              <span className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{ background: '#1877F2' }}>f</span>
+              <span className="text-sm text-gray-600 flex-1">Facebook Today</span>
+              <span className="text-xl font-bold text-blue-700">{metaStats?.facebook_today ?? 0}</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: '#fdf2f8' }}>
+              <span className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xs flex-shrink-0" style={{ background: 'linear-gradient(135deg, #E1306C, #833AB4)' }}>IG</span>
+              <span className="text-sm text-gray-600 flex-1">Instagram Today</span>
+              <span className="text-xl font-bold" style={{ color: '#E1306C' }}>{metaStats?.instagram_today ?? 0}</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-xl">
+              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Calendar className="w-4 h-4 text-indigo-600" />
+              </div>
+              <span className="text-sm text-gray-600 flex-1">This Month</span>
+              <span className="text-xl font-bold text-indigo-700">{(metaStats?.facebook_month ?? 0) + (metaStats?.instagram_month ?? 0)}</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl">
+              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <TrendingUp className="w-4 h-4 text-green-600" />
+              </div>
+              <span className="text-sm text-gray-600 flex-1">Conversion Rate</span>
+              <span className="text-xl font-bold text-green-700">{ov.conversionRate ?? 0}%</span>
+            </div>
+          </div>
+
+          {/* Right: Last 5 Meta Leads */}
+          <div className="space-y-1">
+            {(metaLeadsData?.leads || []).slice(0, 5).length > 0 ? (
+              (metaLeadsData?.leads || []).slice(0, 5).map(lead => (
+                <div key={lead.id} className="flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-gray-900 truncate">{lead.name}</div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {lead.source === 'FACEBOOK_ADS' ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded font-bold text-white leading-none" style={{ background: '#1877F2' }}>FB</span>
+                      ) : (
+                        <span className="text-xs px-1.5 py-0.5 rounded font-bold text-white leading-none" style={{ background: 'linear-gradient(135deg, #E1306C, #833AB4)' }}>IG</span>
+                      )}
+                      <span className="text-xs text-gray-400">{timeAgo(lead.createdAt)}</span>
+                    </div>
+                  </div>
+                  <GradeBadge grade={lead.aiGrade} score={lead.aiScore} />
+                  <Link to={`/leads/${lead.id}`} className="text-gray-300 hover:text-primary-600 transition-colors flex-shrink-0">
+                    <ArrowUpRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 text-center text-gray-400">
+                <div className="text-sm font-medium mb-1">No Meta leads yet</div>
+                <div className="text-xs max-w-[180px]">Add leads from your WhatsApp conversations in the Meta Ads page</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+          <span className="text-xs text-gray-500">
+            {(metaStats?.facebook_month ?? 0) + (metaStats?.instagram_month ?? 0)} leads from Meta this month
+          </span>
+          <Link
+            to="/meta"
+            className="text-xs font-semibold text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:opacity-90 transition-opacity"
+            style={{ background: 'linear-gradient(135deg, #1877F2, #E1306C)' }}
+          >
+            Add WhatsApp Lead <ArrowUpRight className="w-3 h-3" />
+          </Link>
         </div>
       </div>
     </div>
