@@ -20,10 +20,10 @@ export default function Topbar({ title }) {
     <header className="h-16 bg-white border-b border-gray-100 flex items-center px-6 gap-4 flex-shrink-0">
       <h1 className="text-lg font-semibold text-gray-900 flex-1">{title}</h1>
 
-      {/* Ollama status */}
+      {/* Groq AI status */}
       <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${health?.running ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
         {health?.running ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-        {health?.running ? `AI: ${health.activeModel}` : 'AI Offline'}
+        {health?.running ? 'AI: Groq ⚡' : 'AI Offline'}
       </div>
 
       <button className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 relative">

@@ -1,18 +1,28 @@
 import { prisma } from '../utils/prisma.js';
 import { logger } from '../utils/logger.js';
 
-const OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-const MODEL = process.env.OLLAMA_MODEL || 'llama3.2';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
-async function ollamaGenerate(prompt, system = '') {
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
+async function groqGenerate(prompt, system) {
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, prompt, system, stream: false, options: { temperature: 0.3, num_predict: 600 } }),
+    headers: {
+      'Authorization': 'Bearer ' + process.env.GROQ_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: [
+        { role: 'system', content: system || 'You are a helpful CRM assistant.' },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 600,
+      temperature: 0.3,
+    }),
   });
-  if (!res.ok) throw new Error(`Ollama ${res.status}: ${res.statusText}`);
-  const data = await res.json();
-  return data.response?.trim() || '';
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.choices[0].message.content.trim();
 }
 
 const COURSE_NAMES = {
@@ -54,7 +64,7 @@ Respond ONLY with this JSON (no markdown, no extra text):
 
 Scoring: HOT=70-100 (ready to join), WARM=40-69 (interested, needs nurturing), COLD=20-39 (low engagement), UNQUALIFIED=0-19 (not a fit)`;
 
-    const raw = await ollamaGenerate(prompt, 'You only respond with valid JSON objects.');
+    const raw = await groqGenerate(prompt, 'You only respond with valid JSON objects.');
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No JSON in response');
     const result = JSON.parse(match[0]);
@@ -68,11 +78,11 @@ Scoring: HOT=70-100 (ready to join), WARM=40-69 (interested, needs nurturing), C
         aiNextAction: result.nextAction,
       },
     });
-    await prisma.aISession.create({ data: { leadId, prompt, response: raw, model: MODEL } });
-    logger.info(`AI scored lead ${leadId}: ${result.grade} (${result.score})`);
+    await prisma.aISession.create({ data: { leadId, prompt, response: raw, model: GROQ_MODEL } });
+    logger.info(`Groq scored lead ${leadId}: ${result.grade} (${result.score})`);
     return result;
   } catch (err) {
-    logger.error(`Ollama scoring failed for ${leadId}: ${err.message}`);
+    logger.error(`Groq scoring failed for ${leadId}: ${err.message}`);
   }
 }
 
@@ -92,7 +102,7 @@ Previous notes: ${lead.notes.map(n => n.content).join('. ') || 'None'}
 
 Write ONLY the WhatsApp message. Max 120 words. Be warm and genuine, not salesy.`;
 
-  return await ollamaGenerate(prompt, 'You are a professional admissions counselor who writes natural, friendly messages.');
+  return await groqGenerate(prompt, 'You are a professional admissions counselor who writes natural, friendly messages.');
 }
 
 export async function askCRMAssistant(question, userId) {
@@ -101,8 +111,8 @@ You help counselors with lead qualification, course recommendations, follow-up s
 Courses: Professional AI Engineering & Automation, Data Science with AI, AI-Powered Cybersecurity, Python Full Stack with AI, Vibe Coding & SaaS Development, Data Analytics, Business Analytics.
 Be concise, helpful, and professional. Focus on Kerala IT market context.`;
 
-  const response = await ollamaGenerate(question, system);
-  await prisma.aISession.create({ data: { userId, prompt: question, response, model: MODEL } });
+  const response = await groqGenerate(question, system);
+  await prisma.aISession.create({ data: { userId, prompt: question, response, model: GROQ_MODEL } });
   return response;
 }
 
@@ -112,20 +122,30 @@ export async function batchScoreLeads(limit = 50) {
     take: limit,
     select: { id: true },
   });
-  logger.info(`Batch scoring ${leads.length} leads...`);
+  logger.info(`Batch scoring ${leads.length} leads with Groq...`);
   for (const lead of leads) {
     await scoreLeadWithOllama(lead.id);
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 200));
   }
   logger.info(`Batch scoring complete`);
 }
 
 export async function checkOllamaHealth() {
   try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`);
-    const data = await res.json();
-    return { running: true, models: data.models?.map(m => m.name) || [], activeModel: MODEL };
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
+    });
+    const data = await response.json();
+    if (data.data) {
+      return {
+        running: true,
+        models: data.data.map(m => m.id),
+        activeModel: GROQ_MODEL,
+        provider: 'Groq',
+      };
+    }
+    return { running: false, provider: 'Groq' };
   } catch {
-    return { running: false, models: [], activeModel: MODEL };
+    return { running: false, provider: 'Groq' };
   }
 }

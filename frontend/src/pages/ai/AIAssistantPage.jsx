@@ -39,7 +39,7 @@ export default function AIAssistantPage() {
   const endRef = useRef(null);
 
   const { data: health, refetch: refetchHealth } = useQuery({
-    queryKey: ['ollama-health'], queryFn: () => api.get('/ai/health').then(r => r.data), refetchInterval: 30000
+    queryKey: ['health'], queryFn: () => api.get('/ai/health').then(r => r.data), refetchInterval: 30000
   });
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -54,7 +54,7 @@ export default function AIAssistantPage() {
       const { data } = await api.post('/ai/chat', { question: q });
       setMessages(m => [...m, { role: 'ai', text: data.response, timestamp: new Date() }]);
     } catch {
-      setMessages(m => [...m, { role: 'ai', text: "⚠️ I'm having trouble connecting to the AI engine. Please make sure Ollama is running (`ollama serve`) and try again.", timestamp: new Date() }]);
+      setMessages(m => [...m, { role: 'ai', text: "⚠️ Groq AI is offline. Check your GROQ_API_KEY in settings.", timestamp: new Date() }]);
     } finally { setLoading(false); }
   };
 
@@ -79,9 +79,9 @@ export default function AIAssistantPage() {
             <h1 className="page-title">Nexora AI Assistant</h1>
             <div className="flex items-center gap-2 mt-0.5">
               {health?.running ? (
-                <span className="flex items-center gap-1 text-xs text-green-600 font-medium"><Wifi className="w-3 h-3" />Connected • {health.activeModel}</span>
+                <span className="flex items-center gap-1 text-xs text-green-600 font-medium"><Wifi className="w-3 h-3" />Groq AI Connected • llama-3.1-8b-instant ⚡</span>
               ) : (
-                <span className="flex items-center gap-1 text-xs text-red-600 font-medium"><WifiOff className="w-3 h-3" />Ollama offline — run `ollama serve`</span>
+                <span className="flex items-center gap-1 text-xs text-red-600 font-medium"><WifiOff className="w-3 h-3" />Groq AI offline — check GROQ_API_KEY</span>
               )}
             </div>
           </div>

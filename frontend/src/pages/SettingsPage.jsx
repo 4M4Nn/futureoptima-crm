@@ -11,7 +11,7 @@ export default function SettingsPage() {
   const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data) });
-  const { data: health, refetch: refetchHealth } = useQuery({ queryKey: ['ollama-health-settings'], queryFn: () => api.get('/ai/health').then(r => r.data) });
+  const { data: health, refetch: refetchHealth } = useQuery({ queryKey: ['health'], queryFn: () => api.get('/ai/health').then(r => r.data) });
 
   const [form, setForm] = useState({ institute_name: '', whatsapp_enabled: 'true', ai_scoring_enabled: 'true', crm_name: '' });
   const [profileForm, setProfileForm] = useState({ name: user?.name || '', phone: '', currentPassword: '', newPassword: '' });
@@ -39,28 +39,32 @@ export default function SettingsPage() {
         <p className="text-gray-500 text-sm">System configuration and preferences</p>
       </div>
 
-      {/* Ollama / AI status */}
+      {/* Groq AI status */}
       <div className="card p-5">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-8 h-8 bg-purple-100 rounded-xl flex items-center justify-center"><Bot className="w-5 h-5 text-purple-600" /></div>
-          <h3 className="section-title">AI Engine (Ollama)</h3>
+          <h3 className="section-title">AI Engine (Groq)</h3>
           <div className={`ml-auto flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full ${health?.running ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
             {health?.running ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-            {health?.running ? 'Online' : 'Offline'}
+            {health?.running ? 'Connected' : 'Offline'}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-          <div><div className="text-xs text-gray-500">Active Model</div><div className="font-semibold text-gray-900 mt-0.5">{health?.activeModel || 'llama3.2'}</div></div>
-          <div><div className="text-xs text-gray-500">Available Models</div><div className="font-semibold text-gray-900 mt-0.5">{health?.models?.join(', ') || '—'}</div></div>
+          <div><div className="text-xs text-gray-500">Model</div><div className="font-semibold text-gray-900 mt-0.5">llama-3.1-8b-instant</div></div>
+          <div><div className="text-xs text-gray-500">Provider</div><div className="font-semibold text-gray-900 mt-0.5">Groq Cloud ⚡</div></div>
+          <div><div className="text-xs text-gray-500">Status</div><div className={`font-semibold mt-0.5 ${health?.running ? 'text-green-700' : 'text-red-700'}`}>{health?.running ? 'Connected' : 'Offline'}</div></div>
+          <div><div className="text-xs text-gray-500">Speed</div><div className="font-semibold text-gray-900 mt-0.5">Ultra fast inference</div></div>
         </div>
         {!health?.running && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 space-y-1">
-            <div className="font-semibold">Ollama is not running</div>
-            <div className="font-mono text-xs bg-red-100 rounded px-2 py-1">ollama serve</div>
-            <div className="font-mono text-xs bg-red-100 rounded px-2 py-1">ollama pull llama3.2</div>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+            <div className="font-semibold mb-1">Groq AI is offline</div>
+            <div className="text-xs">Check that GROQ_API_KEY is set correctly in your Render environment variables.</div>
           </div>
         )}
-        <button onClick={() => refetchHealth()} className="btn-secondary text-sm mt-3">Check Connection</button>
+        <div className="flex items-center justify-between mt-3">
+          <span className="text-xs text-gray-400">Powered by Groq — ultra fast AI inference</span>
+          <button onClick={() => refetchHealth()} className="btn-secondary text-sm">Check Connection</button>
+        </div>
       </div>
 
       {/* Institute settings */}
@@ -134,7 +138,7 @@ export default function SettingsPage() {
             ['Backend', 'Node.js + Express + Prisma'],
             ['Database', 'PostgreSQL (Neon)'],
             ['Frontend', 'React 18 + Vite + Tailwind'],
-            ['AI Engine', 'Ollama (llama3.2) — Local'],
+            ['AI Engine', 'Groq Cloud (llama-3.1-8b-instant) ⚡'],
             ['Built by', 'Nexora AI Solutions'],
           ].map(([k, v]) => (
             <div key={k} className="flex justify-between py-2 border-b border-gray-50 last:border-0">
