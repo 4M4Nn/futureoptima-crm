@@ -34,6 +34,27 @@ const COURSE_MAP = {
   'business': 'BUSINESS_ANALYTICS',
 };
 
+function detectCourse(text) {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  if (lower.includes('data science')) return 'DATA_SCIENCE_AI';
+  if (lower.includes('ai') || lower.includes('artificial')) return 'AI_ENGINEERING';
+  if (lower.includes('cyber')) return 'AI_CYBERSECURITY';
+  if (lower.includes('python')) return 'PYTHON_FULLSTACK';
+  if (lower.includes('vibe') || lower.includes('saas')) return 'VIBE_CODING_SAAS';
+  if (lower.includes('analytics')) return 'DATA_ANALYTICS';
+  if (lower.includes('business')) return 'BUSINESS_ANALYTICS';
+  if (lower.includes('data')) return 'DATA_ANALYTICS';
+  return null;
+}
+
+function cleanPhone(rawPhone) {
+  const digits = (rawPhone || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits.slice(-10);
+}
+
 function mapCourse(courseStr) {
   if (!courseStr) return null;
   const lower = courseStr.toLowerCase().trim();
@@ -167,6 +188,129 @@ router.post('/whatsapp-lead', authenticate, async (req, res) => {
     await logActivity(lead.id, req.user.id, 'LEAD_CREATED', { source: lead.source, message });
 
     res.status(201).json(lead);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/meta/wa-webhook — WhatsApp webhook verification
+router.get('/wa-webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  res.status(403).send('Verification failed');
+});
+
+// POST /api/meta/wa-webhook — auto-capture leads from Click-to-WhatsApp ads
+router.post('/wa-webhook', async (req, res) => {
+  // Respond 200 immediately — WhatsApp requires fast response
+  res.status(200).json({ status: 'ok' });
+
+  try {
+    const { entry = [] } = req.body;
+    for (const e of entry) {
+      for (const change of e.changes || []) {
+        if (change.field !== 'messages') continue;
+        const value = change.value || {};
+        const messages = value.messages || [];
+        const contacts = value.contacts || [];
+
+        for (const msg of messages) {
+          if (msg.type !== 'text') continue;
+
+          const rawPhone = msg.from || '';
+          const phone = cleanPhone(rawPhone);
+          const messageText = msg.text?.body || '';
+          const contact = contacts.find(c => c.wa_id === msg.from);
+          const name = contact?.profile?.name || 'WhatsApp Lead';
+
+          if (!phone || phone.length < 10) {
+            console.log('[WA] Invalid phone:', rawPhone);
+            continue;
+          }
+
+          const existing = await prisma.lead.findUnique({ where: { phone } });
+
+          if (existing) {
+            await prisma.lead.update({
+              where: { id: existing.id },
+              data: { lastContactAt: new Date() },
+            });
+            await logActivity(existing.id, null, 'WHATSAPP_MESSAGE', { message: messageText, from: name });
+            console.log(`[WA] Message logged for existing lead: ${existing.name} (${phone})`);
+            continue;
+          }
+
+          const interestedCourse = detectCourse(messageText);
+          const lead = await prisma.lead.create({
+            data: {
+              name,
+              phone,
+              source: 'FACEBOOK_ADS',
+              status: 'NEW',
+              interestedCourse: interestedCourse || undefined,
+              lastContactAt: new Date(),
+            },
+          });
+
+          await logActivity(lead.id, null, 'LEAD_CREATED', { source: 'WHATSAPP_AD', message: messageText });
+          scoreLeadWithOllama(lead.id).catch(err =>
+            console.error('[WA] AI scoring error:', err.message)
+          );
+          console.log(`[WA] ✅ Lead created: ${lead.name} (${phone}) course=${interestedCourse || 'none'}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[WA] Webhook processing error:', err.message);
+  }
+});
+
+// GET /api/meta/live-wa — last 24h Meta leads with their WhatsApp message
+router.get('/live-wa', authenticate, async (req, res) => {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const leads = await prisma.lead.findMany({
+      where: {
+        source: { in: ['FACEBOOK_ADS', 'INSTAGRAM'] },
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        interestedCourse: true,
+        source: true,
+        aiGrade: true,
+        aiScore: true,
+        createdAt: true,
+        activities: {
+          where: { action: 'LEAD_CREATED' },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: { details: true },
+        },
+      },
+    });
+
+    const result = leads.map(l => ({
+      id: l.id,
+      name: l.name,
+      phone: l.phone,
+      interestedCourse: l.interestedCourse,
+      source: l.source,
+      aiGrade: l.aiGrade,
+      aiScore: l.aiScore,
+      createdAt: l.createdAt,
+      message: l.activities[0]?.details?.message || null,
+    }));
+
+    res.json({ leads: result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

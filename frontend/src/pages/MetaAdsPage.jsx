@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { RefreshCw, ArrowUpRight, Loader2, Plus, MessageCircle, Wifi, CheckCircle } from 'lucide-react';
+import { RefreshCw, ArrowUpRight, Loader2, Plus, MessageCircle, Wifi, CheckCircle, Copy } from 'lucide-react';
 import api from '../utils/api';
 import { timeAgo } from '../utils/constants';
 import { GradeBadge, LoadingState } from '../components/ui/index';
@@ -66,6 +66,20 @@ export default function MetaAdsPage() {
   });
 
   const leads = leadsData?.leads || [];
+
+  const { data: liveWaData } = useQuery({
+    queryKey: ['meta-live-wa'],
+    queryFn: () => api.get('/meta/live-wa').then(r => r.data),
+    refetchInterval: 15000,
+  });
+  const liveLeads = liveWaData?.leads || [];
+
+  const [copied, setCopied] = useState({});
+  const copyField = (key, value) => {
+    navigator.clipboard.writeText(value);
+    setCopied(c => ({ ...c, [key]: true }));
+    setTimeout(() => setCopied(c => ({ ...c, [key]: false })), 2000);
+  };
 
   useEffect(() => {
     if (dataUpdatedAt) setLastUpdated(dataUpdatedAt);
@@ -451,6 +465,70 @@ export default function MetaAdsPage() {
         )}
       </div>
 
+      {/* Live WhatsApp Messages from Ads */}
+      <div className="card overflow-hidden">
+        <div className="card-header flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-xs font-semibold text-green-700">Live</span>
+            </span>
+            <h3 className="section-title">WhatsApp Messages from Ads</h3>
+          </div>
+          <span className="text-xs text-gray-400">Last 24 hours · Auto-refreshes every 15s</span>
+        </div>
+        {!liveLeads.length ? (
+          <div className="p-8 text-center text-gray-400">
+            <MessageCircle className="w-10 h-10 mx-auto mb-2 opacity-20" />
+            <p className="text-sm font-medium">No messages in the last 24 hours</p>
+            <p className="text-xs mt-1">WhatsApp messages from your Click-to-WhatsApp ads will appear here automatically</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  {['Name', 'Phone', 'Message', 'Course Detected', 'Time', 'AI Grade', 'Actions'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left table-header">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {liveLeads.map(lead => (
+                  <tr key={lead.id} className="table-row">
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{lead.name}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{lead.phone}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600 max-w-[200px]">
+                      {lead.message ? (
+                        <span className="block truncate italic" title={lead.message}>"{lead.message}"</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {lead.interestedCourse ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                          {lead.interestedCourse.replace(/_/g, ' ')}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-400">{timeAgo(lead.createdAt)}</td>
+                    <td className="px-4 py-3"><GradeBadge grade={lead.aiGrade} score={lead.aiScore} /></td>
+                    <td className="px-4 py-3">
+                      <Link to={`/leads/${lead.id}`} className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1 font-medium">
+                        View <ArrowUpRight className="w-3 h-3" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Pro Tips */}
       <div className="card p-5">
         <h3 className="section-title mb-4">💡 Pro Tips for WhatsApp Lead Capture</h3>
@@ -468,6 +546,87 @@ export default function MetaAdsPage() {
               <span className="text-sm text-amber-800">{tip}</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Webhook Setup */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card p-5">
+          <h3 className="section-title mb-1">📋 Lead Form Ads Webhook</h3>
+          <p className="text-xs text-gray-400 mb-4">For Facebook Lead Form campaigns</p>
+          <div className="space-y-3">
+            <div>
+              <label className="label">Callback URL</label>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="text-xs text-gray-800 flex-1 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg font-mono break-all">
+                  https://futureoptima-crm.onrender.com/api/meta/webhook
+                </code>
+                <button onClick={() => copyField('leadWebhook', 'https://futureoptima-crm.onrender.com/api/meta/webhook')} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0 transition-colors">
+                  {copied.leadWebhook ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="label">Verify Token</label>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="text-xs text-gray-800 flex-1 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg font-mono">
+                  futureoptima_meta_2025
+                </code>
+                <button onClick={() => copyField('leadToken', 'futureoptima_meta_2025')} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0 transition-colors">
+                  {copied.leadToken ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 pt-1">Subscribe to: <span className="font-semibold">leadgen</span> field</p>
+          </div>
+        </div>
+
+        <div className="card p-5">
+          <h3 className="section-title mb-1">💬 Click-to-WhatsApp Webhook</h3>
+          <p className="text-xs text-gray-400 mb-4">Auto-captures leads from WhatsApp ad messages</p>
+          <div className="space-y-3">
+            <div>
+              <label className="label">Callback URL</label>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="text-xs text-gray-800 flex-1 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg font-mono break-all">
+                  https://futureoptima-crm.onrender.com/api/meta/wa-webhook
+                </code>
+                <button onClick={() => copyField('waWebhook', 'https://futureoptima-crm.onrender.com/api/meta/wa-webhook')} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0 transition-colors">
+                  {copied.waWebhook ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="label">Verify Token</label>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="text-xs text-gray-800 flex-1 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg font-mono">
+                  futureoptima_meta_2025
+                </code>
+                <button onClick={() => copyField('waToken', 'futureoptima_meta_2025')} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0 transition-colors">
+                  {copied.waToken ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-700 mb-2">Setup Steps:</p>
+            <ol className="text-xs text-gray-500 space-y-1">
+              {[
+                'Go to developers.facebook.com',
+                'Open Future Optima CRM app → Add WhatsApp product',
+                'WhatsApp > Configuration > Webhook',
+                'Add Callback URL above + Verify Token above',
+                'Click Verify and Save',
+                'Subscribe to: messages field',
+                'Every WhatsApp ad message auto-creates a lead! ✅',
+              ].map((step, i) => (
+                <li key={i} className="flex gap-1.5">
+                  <span className="text-gray-300 flex-shrink-0">{i + 1}.</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
       </div>
 
