@@ -132,20 +132,34 @@ export async function batchScoreLeads(limit = 50) {
 
 export async function checkOllamaHealth() {
   try {
+    console.log('Checking Groq health...');
+    console.log('API Key exists:', !!process.env.GROQ_API_KEY);
+
     const response = await fetch('https://api.groq.com/openai/v1/models', {
-      headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
     });
+
+    console.log('Groq response status:', response.status);
     const data = await response.json();
-    if (data.data) {
+    console.log('Groq response data keys:', Object.keys(data));
+
+    if (response.ok && data.data && data.data.length > 0) {
       return {
         running: true,
-        models: data.data.map(m => m.id),
-        activeModel: GROQ_MODEL,
+        models: data.data.slice(0, 5).map(m => m.id),
+        activeModel: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
         provider: 'Groq',
       };
     }
-    return { running: false, provider: 'Groq' };
-  } catch {
-    return { running: false, provider: 'Groq' };
+
+    console.log('Groq error response:', JSON.stringify(data));
+    return { running: false, provider: 'Groq', error: data.error?.message };
+  } catch (err) {
+    console.log('Groq health check exception:', err.message);
+    return { running: false, provider: 'Groq', error: err.message };
   }
 }
