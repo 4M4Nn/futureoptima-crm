@@ -88,7 +88,7 @@ if (process.env.ENABLE_CRONS === 'true') {
 
 const server = app.listen(PORT, () => {
   logger.info(`🚀 Nexora CRM API → http://localhost:${PORT}`);
-  logger.info(`🤖 Ollama → ${process.env.OLLAMA_BASE_URL}`);
+  logger.info(`🤖 Groq AI → ${process.env.GROQ_MODEL || 'llama-3.1-8b-instant'}`);
 });
 
 process.on('SIGTERM', async () => {
