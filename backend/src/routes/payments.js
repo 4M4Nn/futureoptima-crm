@@ -85,6 +85,62 @@ router.post('/', [
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.post('/full-settlement', [
+  body('enrollmentId').notEmpty(),
+  body('method').isIn(['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'CARD']),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const { enrollmentId, method, transactionId } = req.body;
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: { lead: true, course: true, installments: { where: { status: { not: 'PAID' } } } },
+    });
+    if (!enrollment) return res.status(404).json({ error: 'Enrollment not found' });
+    if (enrollment.balanceDue <= 0) return res.status(400).json({ error: 'No balance due' });
+
+    const amount = enrollment.balanceDue;
+    const receiptNumber = `FO-SET-${Date.now().toString().slice(-8)}`;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.create({
+        data: { enrollmentId, amount, method, transactionId: transactionId || null, receiptNumber, remarks: 'Full Settlement', collectedById: req.user.id },
+      });
+      await tx.enrollment.update({
+        where: { id: enrollmentId },
+        data: { paidAmount: enrollment.netFee, balanceDue: 0, paymentStatus: 'PAID' },
+      });
+      if (enrollment.installments.length > 0) {
+        await tx.installment.updateMany({
+          where: { enrollmentId, status: { not: 'PAID' } },
+          data: { status: 'PAID', paidAt: new Date() },
+        });
+      }
+      return payment;
+    });
+
+    await logActivity(enrollment.leadId, req.user.id, 'FULL_SETTLEMENT', { amount, method, receiptNumber });
+
+    generateReceiptPDF({
+      receiptNumber,
+      studentName: enrollment.lead.name,
+      phone: enrollment.lead.phone,
+      courseName: enrollment.course.name,
+      amount,
+      method,
+      transactionId,
+      paidAt: result.paidAt || new Date(),
+      netFee: enrollment.netFee,
+      paidTotal: enrollment.netFee,
+      balance: 0,
+      collectedBy: req.user.name,
+    }).catch(console.error);
+
+    res.status(201).json({ ...result, message: 'Full settlement complete! All installments cleared.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/stats', async (req, res) => {
   try {
     const today = new Date(); today.setHours(0, 0, 0, 0);

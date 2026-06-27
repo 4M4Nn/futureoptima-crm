@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
-import { ArrowLeft, CreditCard, CheckCircle, GraduationCap, Bot, Loader2, Download } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, CreditCard, CheckCircle, GraduationCap, Bot, Loader2, Download, Award, Banknote, X } from 'lucide-react';
 import api from '../../utils/api';
 import { fmt, fmtDate, fmtDatetime } from '../../utils/constants';
 import { LoadingState, StatusBadge, Modal, Input, Select } from '../../components/ui/index';
@@ -40,7 +40,6 @@ function PayInstallmentModal({ open, onClose, installment, enrollmentId }) {
   });
 
   const OPTS = ['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'EMI'].map(m => ({ value: m, label: m.replace('_', ' ') }));
-
   const handleClose = () => { setLastPayment(null); onClose(); };
 
   return (
@@ -82,11 +81,143 @@ function PayInstallmentModal({ open, onClose, installment, enrollmentId }) {
   );
 }
 
+function PayFullModal({ open, onClose, enrollment }) {
+  const qc = useQueryClient();
+  const [method, setMethod] = useState('UPI');
+  const [transactionId, setTransactionId] = useState('');
+  const [done, setDone] = useState(null);
+
+  const pendingCount = enrollment?.installments?.filter(i => i.status !== 'PAID').length || 0;
+  const OPTS = ['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'CARD'].map(m => ({ value: m, label: m.replace('_', ' ') }));
+
+  const mutation = useMutation({
+    mutationFn: () => api.post('/payments/full-settlement', { enrollmentId: enrollment.id, method, transactionId }).then(r => r.data),
+    onSuccess: (data) => {
+      toast.success('Full settlement complete!');
+      qc.invalidateQueries(['enrollment', enrollment.id]);
+      setDone(data);
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.message || 'Settlement failed'),
+  });
+
+  const handleClose = () => { setDone(null); setMethod('UPI'); setTransactionId(''); onClose(); };
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Pay Full Settlement" size="md">
+      <div className="p-6 space-y-4">
+        {done ? (
+          <div className="text-center py-4 space-y-4">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">Full Settlement Complete!</h3>
+            <p className="text-gray-500 text-sm">All installments have been cleared. Receipt: {done.receiptNumber}</p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => downloadReceipt(done.id, done.receiptNumber)} className="btn-primary bg-green-600 hover:bg-green-700">
+                <Download className="w-4 h-4" />Download Receipt
+              </button>
+              <button onClick={handleClose} className="btn-secondary">Close</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Total Remaining Balance</span>
+                <span className="text-2xl font-bold text-amber-700">{fmt(enrollment?.balanceDue)}</span>
+              </div>
+              {pendingCount > 0 && (
+                <p className="text-xs text-amber-600">This will clear {pendingCount} pending installment{pendingCount > 1 ? 's' : ''}</p>
+              )}
+            </div>
+            <Select label="Payment Method" value={method} onChange={setMethod} options={OPTS} />
+            <Input label="Transaction / Ref ID (optional)" value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="UPI ref / cheque no / bank ref" />
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-xs text-yellow-800">
+              ⚠️ This will mark all pending installments as PAID and update enrollment status to PAID.
+            </div>
+            <div className="flex justify-end gap-3">
+              <button className="btn-secondary" onClick={handleClose}>Cancel</button>
+              <button className="btn-gold" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+                {mutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Processing...</> : <><Banknote className="w-4 h-4" />Settle Full Balance {fmt(enrollment?.balanceDue)}</>}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function CertificateSection({ enrollment }) {
+  const [certResult, setCertResult] = useState(null);
+  const [loading, setLoading] = useState('');
+
+  const generate = async (type) => {
+    setLoading(type);
+    try {
+      const { data } = await api.post('/certificates/generate', { enrollmentId: enrollment.id, type });
+      setCertResult(data);
+      toast.success(`${type === 'COMPLETION' ? 'Course Completion' : 'Internship'} Certificate generated!`);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Certificate generation failed');
+    } finally {
+      setLoading('');
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+          <GraduationCap className="w-6 h-6 text-white" />
+        </div>
+        <div>
+          <h3 className="font-bold text-lg">🎓 Course Complete! Generate Certificate</h3>
+          <p className="text-green-100 text-sm">All fees paid — {enrollment.lead?.name} is eligible for certification</p>
+        </div>
+      </div>
+
+      {certResult ? (
+        <div className="bg-white/20 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-white" />
+            <span className="font-semibold">Certificate Generated!</span>
+          </div>
+          <div className="text-sm text-green-100">Certificate No: <span className="font-bold text-white">{certResult.certificateNo}</span></div>
+          <div className="flex gap-3">
+            <a href={`${import.meta.env.VITE_API_URL || ''}/api/certificates/${certResult.id}/download`} target="_blank" rel="noreferrer"
+              className="flex items-center gap-2 bg-white text-green-700 hover:bg-green-50 px-4 py-2 rounded-xl font-semibold text-sm transition-colors">
+              <Download className="w-4 h-4" />Download Certificate
+            </a>
+            <button onClick={() => setCertResult(null)} className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-medium text-sm transition-colors">
+              Generate Another
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={() => generate('COMPLETION')} disabled={!!loading}
+            className="flex items-center gap-2 bg-white text-green-700 hover:bg-green-50 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors disabled:opacity-70">
+            {loading === 'COMPLETION' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
+            Generate Course Completion Certificate
+          </button>
+          <button onClick={() => generate('INTERNSHIP')} disabled={!!loading}
+            className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors disabled:opacity-70">
+            {loading === 'INTERNSHIP' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
+            Generate Internship Certificate
+          </button>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 export default function StudentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [payInst, setPayInst] = useState(null);
+  const [showPayFull, setShowPayFull] = useState(false);
   const [tab, setTab] = useState('installments');
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [loadingAI, setLoadingAI] = useState(false);
@@ -112,6 +243,7 @@ export default function StudentDetailPage() {
 
   const dueInstallments = enrollment.installments?.filter(i => i.status !== 'PAID') || [];
   const paidPct = enrollment.netFee > 0 ? (enrollment.paidAmount / enrollment.netFee) * 100 : 0;
+  const isFullyPaid = enrollment.balanceDue === 0 || enrollment.paymentStatus === 'PAID';
 
   return (
     <div className="space-y-5 animate-fade-in max-w-5xl mx-auto">
@@ -126,6 +258,11 @@ export default function StudentDetailPage() {
           <StatusBadge status={enrollment.paymentStatus} />
         </div>
       </div>
+
+      {/* Certificate banner — shown when fully paid */}
+      <AnimatePresence>
+        {isFullyPaid && <CertificateSection enrollment={enrollment} />}
+      </AnimatePresence>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
@@ -156,85 +293,117 @@ export default function StudentDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 card">
-          <div className="border-b border-gray-100">
-            <div className="flex">
-              {[['installments', 'Installments'], ['payments', 'Payment History'], ['info', 'Course Info']].map(([k, l]) => (
-                <button key={k} onClick={() => setTab(k)} className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${tab === k ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{l}</button>
-              ))}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="card">
+            <div className="border-b border-gray-100">
+              <div className="flex">
+                {[['installments', 'Installments'], ['payments', 'Payment History'], ['info', 'Course Info']].map(([k, l]) => (
+                  <button key={k} onClick={() => setTab(k)} className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${tab === k ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{l}</button>
+                ))}
+              </div>
             </div>
+
+            {tab === 'installments' && (
+              <div className="p-4 space-y-2">
+                {enrollment.installments?.map(inst => (
+                  <div key={inst.id} className={`flex items-center gap-4 p-4 rounded-xl border ${inst.status === 'PAID' ? 'bg-green-50 border-green-200' : inst.status === 'OVERDUE' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm ${inst.status === 'PAID' ? 'bg-green-500 text-white' : inst.status === 'OVERDUE' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                      {inst.status === 'PAID' ? '✓' : inst.installmentNo}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900">Installment #{inst.installmentNo}</span>
+                        <StatusBadge status={inst.status} />
+                      </div>
+                      <div className="text-sm text-gray-500 mt-0.5">
+                        {inst.status === 'PAID' ? `Paid on ${fmtDate(inst.paidAt)}` : `Due: ${fmtDate(inst.dueDate)}`}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-lg text-gray-900">{fmt(inst.amount)}</div>
+                      {inst.status !== 'PAID' && (
+                        <button onClick={() => setPayInst(inst)} className="btn-gold text-xs mt-1 py-1">Pay Now</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {!enrollment.installments?.length && <div className="text-center py-8 text-gray-400 text-sm">No installment plan created</div>}
+              </div>
+            )}
+
+            {tab === 'payments' && (
+              <div className="p-4 space-y-2">
+                {enrollment.payments?.map(p => (
+                  <div key={p.id} className="flex items-center gap-4 p-3 rounded-xl border border-gray-100 bg-gray-50">
+                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center"><CheckCircle className="w-4 h-4 text-green-600" /></div>
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-gray-900">{p.receiptNumber}</div>
+                      <div className="text-xs text-gray-500">{p.method.replace('_', ' ')} {p.transactionId ? `• Ref: ${p.transactionId}` : ''} • {p.collectedBy?.name}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-green-700">{fmt(p.amount)}</div>
+                      <div className="text-xs text-gray-400">{fmtDate(p.paidAt)}</div>
+                    </div>
+                    <button onClick={() => downloadReceipt(p.id, p.receiptNumber)} className="btn-secondary text-xs py-1.5 px-2 flex-shrink-0">
+                      <Download className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                {!enrollment.payments?.length && <div className="text-center py-8 text-gray-400 text-sm">No payments recorded yet</div>}
+              </div>
+            )}
+
+            {tab === 'info' && (
+              <div className="p-4 grid grid-cols-2 gap-4">
+                {[
+                  ['Course', enrollment.course?.name],
+                  ['Batch', enrollment.batch?.batchName || '—'],
+                  ['Mode', enrollment.batch?.mode || '—'],
+                  ['Start Date', fmtDate(enrollment.batch?.startDate)],
+                  ['Faculty', enrollment.batch?.facultyName || '—'],
+                  ['Timings', enrollment.batch?.timings || '—'],
+                  ['Enrolled On', fmtDate(enrollment.enrolledAt)],
+                  ['Receipt No', enrollment.receiptNo],
+                  ['Discount', enrollment.discountAmount > 0 ? `${fmt(enrollment.discountAmount)} — ${enrollment.discountReason}` : 'None'],
+                  ['Scholarship', enrollment.scholarshipName ? `${enrollment.scholarshipName} (${enrollment.scholarshipPct}%)` : 'None'],
+                ].map(([l, v]) => (
+                  <div key={l}>
+                    <div className="text-xs text-gray-400 font-medium">{l}</div>
+                    <div className="text-sm text-gray-800 font-medium mt-0.5">{v || '—'}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {tab === 'installments' && (
-            <div className="p-4 space-y-2">
-              {enrollment.installments?.map(inst => (
-                <div key={inst.id} className={`flex items-center gap-4 p-4 rounded-xl border ${inst.status === 'PAID' ? 'bg-green-50 border-green-200' : inst.status === 'OVERDUE' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm ${inst.status === 'PAID' ? 'bg-green-500 text-white' : inst.status === 'OVERDUE' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-600'}`}>
-                    {inst.status === 'PAID' ? '✓' : inst.installmentNo}
+          {/* Full Settlement Card — shown when balance > 0 */}
+          {!isFullyPaid && enrollment.balanceDue > 0 && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl p-5 border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                    <Banknote className="w-6 h-6 text-amber-600" />
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900">Installment #{inst.installmentNo}</span>
-                      <StatusBadge status={inst.status} />
-                    </div>
-                    <div className="text-sm text-gray-500 mt-0.5">
-                      {inst.status === 'PAID' ? `Paid on ${fmtDate(inst.paidAt)}` : `Due: ${fmtDate(inst.dueDate)}`}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold text-lg text-gray-900">{fmt(inst.amount)}</div>
-                    {inst.status !== 'PAID' && (
-                      <button onClick={() => setPayInst(inst)} className="btn-gold text-xs mt-1 py-1">Pay Now</button>
-                    )}
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base">💰 Pay Full Settlement</h3>
+                    <p className="text-gray-500 text-sm">Clear all remaining balance in one payment</p>
                   </div>
                 </div>
-              ))}
-              {!enrollment.installments?.length && <div className="text-center py-8 text-gray-400 text-sm">No installment plan created</div>}
-            </div>
-          )}
-
-          {tab === 'payments' && (
-            <div className="p-4 space-y-2">
-              {enrollment.payments?.map(p => (
-                <div key={p.id} className="flex items-center gap-4 p-3 rounded-xl border border-gray-100 bg-gray-50">
-                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center"><CheckCircle className="w-4 h-4 text-green-600" /></div>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold text-gray-900">{p.receiptNumber}</div>
-                    <div className="text-xs text-gray-500">{p.method.replace('_', ' ')} {p.transactionId ? `• Ref: ${p.transactionId}` : ''} • {p.collectedBy?.name}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold text-green-700">{fmt(p.amount)}</div>
-                    <div className="text-xs text-gray-400">{fmtDate(p.paidAt)}</div>
-                  </div>
-                  <button onClick={() => downloadReceipt(p.id, p.receiptNumber)} className="btn-secondary text-xs py-1.5 px-2 flex-shrink-0">
-                    <Download className="w-3 h-3" />
-                  </button>
+              </div>
+              <div className="mt-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-gray-500 font-medium">Remaining Balance</div>
+                  <div className="text-3xl font-bold text-amber-700 mt-0.5">{fmt(enrollment.balanceDue)}</div>
+                  {dueInstallments.length > 0 && (
+                    <div className="text-xs text-gray-400 mt-1">{dueInstallments.length} pending installment{dueInstallments.length > 1 ? 's' : ''}</div>
+                  )}
                 </div>
-              ))}
-              {!enrollment.payments?.length && <div className="text-center py-8 text-gray-400 text-sm">No payments recorded yet</div>}
-            </div>
-          )}
-
-          {tab === 'info' && (
-            <div className="p-4 grid grid-cols-2 gap-4">
-              {[
-                ['Course', enrollment.course?.name],
-                ['Batch', enrollment.batch?.batchName || '—'],
-                ['Mode', enrollment.batch?.mode || '—'],
-                ['Start Date', fmtDate(enrollment.batch?.startDate)],
-                ['Faculty', enrollment.batch?.facultyName || '—'],
-                ['Timings', enrollment.batch?.timings || '—'],
-                ['Enrolled On', fmtDate(enrollment.enrolledAt)],
-                ['Receipt No', enrollment.receiptNo],
-                ['Discount', enrollment.discountAmount > 0 ? `${fmt(enrollment.discountAmount)} — ${enrollment.discountReason}` : 'None'],
-                ['Scholarship', enrollment.scholarshipName ? `${enrollment.scholarshipName} (${enrollment.scholarshipPct}%)` : 'None'],
-              ].map(([l, v]) => (
-                <div key={l}>
-                  <div className="text-xs text-gray-400 font-medium">{l}</div>
-                  <div className="text-sm text-gray-800 font-medium mt-0.5">{v || '—'}</div>
-                </div>
-              ))}
-            </div>
+                <button onClick={() => setShowPayFull(true)} className="btn-gold text-sm px-6 py-3">
+                  <Banknote className="w-4 h-4" />Pay Full Balance Now
+                </button>
+              </div>
+            </motion.div>
           )}
         </div>
 
@@ -268,9 +437,18 @@ export default function StudentDetailPage() {
 
           <div className="card p-4 space-y-2">
             <div className="text-sm font-semibold text-gray-700 mb-2">Quick Actions</div>
-            <button onClick={() => dueInstallments.length && setPayInst(dueInstallments[0])} disabled={!dueInstallments.length} className="w-full btn-gold text-sm justify-center disabled:opacity-40">
-              <CreditCard className="w-4 h-4" />Pay Next Installment
-            </button>
+            {!isFullyPaid ? (
+              <>
+                <button onClick={() => dueInstallments.length && setPayInst(dueInstallments[0])} disabled={!dueInstallments.length} className="w-full btn-gold text-sm justify-center disabled:opacity-40">
+                  <CreditCard className="w-4 h-4" />Pay Next Installment
+                </button>
+                <button onClick={() => setShowPayFull(true)} className="w-full btn-secondary text-sm justify-center border-amber-300 text-amber-700 hover:bg-amber-50">
+                  <Banknote className="w-4 h-4" />Pay Full Balance
+                </button>
+              </>
+            ) : (
+              <div className="text-center py-2 text-sm text-green-600 font-medium">✅ Fully Paid</div>
+            )}
             {enrollment.payments?.[0] && (
               <button onClick={() => downloadReceipt(enrollment.payments[0].id, enrollment.payments[0].receiptNumber)} className="w-full btn-secondary text-sm justify-center">
                 <Download className="w-4 h-4" />Download Last Receipt
@@ -282,6 +460,9 @@ export default function StudentDetailPage() {
 
       {payInst && (
         <PayInstallmentModal open={!!payInst} onClose={() => setPayInst(null)} installment={payInst} enrollmentId={enrollment.id} />
+      )}
+      {showPayFull && (
+        <PayFullModal open={showPayFull} onClose={() => setShowPayFull(false)} enrollment={enrollment} />
       )}
     </div>
   );

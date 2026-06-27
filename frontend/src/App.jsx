@@ -16,8 +16,8 @@ import WhatsAppPage from './pages/WhatsAppPage';
 import CoursesPage from './pages/CoursesPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
-import MetaAdsPage from './pages/MetaAdsPage';
 import ReportsPage from './pages/ReportsPage';
+import ForecastPage from './pages/ForecastPage';
 import FollowUpsPage from './pages/FollowUpsPage';
 import FinanceDashboard from './pages/finance/FinanceDashboard';
 import ExpensesPage from './pages/finance/ExpensesPage';
@@ -47,7 +47,7 @@ export default function App() {
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="reports" element={<ReportsPage />} />
-          <Route path="meta" element={<MetaAdsPage />} />
+          <Route path="forecast" element={<ForecastPage />} />
           <Route path="ai" element={<AIAssistantPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="campaigns" element={<CampaignsPage />} />
