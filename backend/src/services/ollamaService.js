@@ -3,26 +3,34 @@ import { logger } from '../utils/logger.js';
 
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
-async function groqGenerate(prompt, system) {
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + process.env.GROQ_API_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [
-        { role: 'system', content: system || 'You are a helpful CRM assistant.' },
-        { role: 'user', content: prompt },
-      ],
-      max_tokens: 600,
-      temperature: 0.3,
-    }),
-  });
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.choices[0].message.content.trim();
+async function groqGenerate(prompt, system, maxTokens = 600) {
+  if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Authorization': 'Bearer ' + process.env.GROQ_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [
+          { role: 'system', content: system || 'You are a helpful CRM assistant.' },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.3,
+      }),
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message);
+    return data.choices[0].message.content.trim();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const COURSE_NAMES = {
@@ -131,34 +139,35 @@ export async function batchScoreLeads(limit = 50) {
 }
 
 export async function checkOllamaHealth() {
+  if (!process.env.GROQ_API_KEY) {
+    return { running: false, provider: 'Groq', error: 'GROQ_API_KEY not set in environment' };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    if (!process.env.GROQ_API_KEY) {
-      return { running: false, provider: 'Groq', error: 'No API key' };
-    }
-
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: GROQ_MODEL,
         messages: [{ role: 'user', content: 'Hi' }],
         max_tokens: 5,
       }),
     });
-
-    console.log('Groq chat test status:', response.status);
-
-    return {
-      running: response.status === 200,
-      activeModel: 'llama-3.1-8b-instant',
-      provider: 'Groq',
-      models: ['llama-3.1-8b-instant', 'llama3-8b-8192'],
-    };
+    logger.info(`Groq health check status: ${response.status}`);
+    if (response.status === 200) {
+      return { running: true, activeModel: GROQ_MODEL, provider: 'Groq', models: [GROQ_MODEL, 'llama3-8b-8192'] };
+    }
+    const err = await response.json().catch(() => ({}));
+    return { running: false, provider: 'Groq', error: err?.error?.message || `HTTP ${response.status}` };
   } catch (err) {
-    console.log('Groq error:', err.message);
-    return { running: false, provider: 'Groq', error: err.message };
+    logger.error(`Groq health check failed: ${err.message}`);
+    return { running: false, provider: 'Groq', error: err.name === 'AbortError' ? 'Connection timeout (10s)' : err.message };
+  } finally {
+    clearTimeout(timeout);
   }
 }

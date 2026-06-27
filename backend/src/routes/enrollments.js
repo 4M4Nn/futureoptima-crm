@@ -58,12 +58,13 @@ router.post('/', [
 
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 25, status, courseId, paymentStatus, leadId, search } = req.query;
+    const { page = 1, limit = 25, status, courseId, paymentStatus, leadId, search, batchId } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const where = {};
     if (leadId) where.leadId = leadId;
     if (status) where.status = status;
     if (paymentStatus) where.paymentStatus = paymentStatus;
+    if (batchId) where.batchId = batchId;
     if (search) where.lead = { OR: [{ name: { contains: search, mode: 'insensitive' } }, { phone: { contains: search } }] };
     if (courseId) {
       // Accept both Course.id (cuid) and CourseId enum (e.g. AI_ENGINEERING)

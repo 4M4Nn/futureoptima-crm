@@ -83,16 +83,22 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [courseId, setCourseId] = useState('');
+  const [batchId, setBatchId] = useState('');
   const [courseFee, setCourseFee] = useState('');
   const [discountAmount, setDiscountAmount] = useState('0');
   const [discountReason, setDiscountReason] = useState('');
   const [installments, setInstallments] = useState('1');
-  const [batch, setBatch] = useState('');
 
   const { data: courses } = useQuery({
     queryKey: ['courses'],
     queryFn: () => api.get('/courses').then(r => r.data),
     enabled: open,
+  });
+
+  const { data: batches } = useQuery({
+    queryKey: ['course-batches', courseId],
+    queryFn: () => api.get(`/courses/${courseId}/batches`).then(r => r.data),
+    enabled: open && !!courseId,
   });
 
   useEffect(() => {
@@ -102,17 +108,20 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
       if (found) {
         setCourseId(found.id);
         setCourseFee(String(found.fees));
+        setBatchId('');
         return;
       }
     }
     setCourseId('');
     setCourseFee('');
+    setBatchId('');
   }, [open, courses, interestedCourse]);
 
   const netFee = Math.max(0, (Number(courseFee) || 0) - (Number(discountAmount) || 0));
 
   const handleCourseChange = (id) => {
     setCourseId(id);
+    setBatchId('');
     const selected = courses?.find(c => c.id === id);
     if (selected) setCourseFee(String(selected.fees));
     else setCourseFee('');
@@ -133,7 +142,7 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
   const handleClose = () => {
     if (mutation.isPending) return;
     setCourseId(''); setCourseFee(''); setDiscountAmount('0');
-    setDiscountReason(''); setInstallments('1'); setBatch('');
+    setDiscountReason(''); setInstallments('1'); setBatchId('');
     onClose();
   };
 
@@ -143,6 +152,7 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
     mutation.mutate({
       leadId,
       courseId,
+      batchId: batchId || undefined,
       courseFee: Number(courseFee),
       discountAmount: Number(discountAmount) || 0,
       discountReason: discountReason || undefined,
@@ -166,7 +176,14 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
 
         <div>
           <label className="label">Batch (optional)</label>
-          <input className="input" value={batch} onChange={e => setBatch(e.target.value)} placeholder="e.g. Morning Batch / June 2026" />
+          <select className="input" value={batchId} onChange={e => setBatchId(e.target.value)} disabled={!courseId}>
+            <option value="">{courseId ? (batches?.length ? 'Select batch...' : 'No active batches') : 'Select a course first'}</option>
+            {(batches || []).map(b => (
+              <option key={b.id} value={b.id}>
+                {b.batchName} · {b.mode} · {b.timings} · starts {b.startDate ? new Date(b.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
