@@ -1,45 +1,149 @@
-import { useState, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
-import { Award, Search, Download, GraduationCap, Briefcase, CheckCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Award, Search, Download, GraduationCap, Briefcase, CheckCircle, AlertTriangle, XCircle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { fmt, fmtDate } from '../utils/constants';
 import { LoadingState, EmptyState } from '../components/ui/index';
 
 const TYPE_CONFIG = {
-  COMPLETION: { label: 'Course Completion', icon: GraduationCap, color: 'bg-blue-100 text-blue-700' },
-  INTERNSHIP: { label: 'Internship', icon: Briefcase, color: 'bg-purple-100 text-purple-700' },
+  COMPLETION: { label: 'Course Completion', icon: GraduationCap, color: 'bg-blue-100 text-blue-700', btnClass: 'btn-gold' },
+  INTERNSHIP: { label: 'Internship', icon: Briefcase, color: 'bg-purple-100 text-purple-700', btnClass: 'bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-xl text-sm flex items-center gap-2 transition-colors' },
 };
 
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
-  const timer = useCallback(() => {
-    const t = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(t);
+  const timerRef = useRef(null);
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timerRef.current);
   }, [value, delay]);
-  useState(timer);
   return debounced;
+}
+
+function EligibilityBadge({ enrollment }) {
+  if (enrollment.paymentStatus === 'PAID' || enrollment.balanceDue === 0) {
+    return <span className="flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 px-2.5 py-1 rounded-full"><CheckCircle className="w-3 h-3" />Eligible for Certificate</span>;
+  }
+  if (enrollment.paymentStatus === 'PARTIAL') {
+    return <span className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full"><AlertTriangle className="w-3 h-3" />Partial Payment — {fmt(enrollment.balanceDue)} remaining</span>;
+  }
+  return <span className="flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-100 px-2.5 py-1 rounded-full"><XCircle className="w-3 h-3" />No Payment Made</span>;
+}
+
+function EnrollmentCard({ enrollment }) {
+  const qc = useQueryClient();
+  const [generating, setGenerating] = useState('');
+  const [certResult, setCertResult] = useState(null);
+  const isPending = enrollment.paymentStatus === 'PENDING';
+
+  const generate = async (type) => {
+    setGenerating(type);
+    try {
+      const { data } = await api.post('/certificates/generate', { enrollmentId: enrollment.id, type });
+      setCertResult(data);
+      toast.success(`${type === 'COMPLETION' ? 'Course Completion' : 'Internship'} Certificate generated!`);
+      qc.invalidateQueries({ queryKey: ['certificates'] });
+    } catch (e) {
+      toast.error(e?.response?.data?.error || e?.message || 'Certificate generation failed');
+    } finally {
+      setGenerating('');
+    }
+  };
+
+  const downloadUrl = certResult
+    ? `${import.meta.env.VITE_API_URL || ''}/api/certificates/${certResult.id}/download`
+    : null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="card border border-gray-100 hover:border-primary-200 transition-colors"
+    >
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <div className="text-base font-bold text-gray-900">{enrollment.lead?.name}</div>
+          <div className="text-sm text-gray-400">{enrollment.lead?.phone}</div>
+        </div>
+        <EligibilityBadge enrollment={enrollment} />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+        <div>
+          <div className="text-xs text-gray-400">Course</div>
+          <div className="font-medium text-gray-800 text-xs mt-0.5">{enrollment.course?.name}</div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-400">Enrolled</div>
+          <div className="font-medium text-gray-700 text-xs mt-0.5">{fmtDate(enrollment.enrolledAt)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-400">Paid</div>
+          <div className="font-semibold text-green-600 text-xs mt-0.5">{fmt(enrollment.paidAmount)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-400">Balance</div>
+          <div className={`font-semibold text-xs mt-0.5 ${enrollment.balanceDue > 0 ? 'text-red-600' : 'text-green-600'}`}>
+            {enrollment.balanceDue > 0 ? fmt(enrollment.balanceDue) : '✅ Fully Paid'}
+          </div>
+        </div>
+      </div>
+
+      {enrollment.paymentStatus === 'PARTIAL' && (
+        <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          ⚠️ Student has pending balance. Proceed at admin discretion.
+        </div>
+      )}
+
+      {certResult ? (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold text-green-800 flex items-center gap-1.5"><CheckCircle className="w-4 h-4" />Certificate Generated!</div>
+            <div className="text-xs text-green-600 mt-0.5 font-mono">{certResult.certificateNo}</div>
+          </div>
+          <a href={downloadUrl} target="_blank" rel="noreferrer"
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
+            <Download className="w-3.5 h-3.5" />Download
+          </a>
+        </div>
+      ) : (
+        <div className={`flex gap-2 ${isPending ? 'opacity-40 pointer-events-none' : ''}`}>
+          <button onClick={() => generate('COMPLETION')} disabled={!!generating}
+            className="btn-gold text-xs py-2 px-3 flex-1 justify-center">
+            {generating === 'COMPLETION' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GraduationCap className="w-3.5 h-3.5" />}
+            Completion Certificate
+          </button>
+          <button onClick={() => generate('INTERNSHIP')} disabled={!!generating}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3 rounded-xl flex-1 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-60">
+            {generating === 'INTERNSHIP' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Briefcase className="w-3.5 h-3.5" />}
+            Internship Certificate
+          </button>
+        </div>
+      )}
+    </motion.div>
+  );
 }
 
 export default function CertificatesPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState('generate');
   const [search, setSearch] = useState('');
-  const [selectedEnrollment, setSelectedEnrollment] = useState(null);
-  const [certType, setCertType] = useState('COMPLETION');
-  const [generatedCert, setGeneratedCert] = useState(null);
   const [historySearch, setHistorySearch] = useState('');
   const [historyTypeFilter, setHistoryTypeFilter] = useState('');
   const [bulkCourseId, setBulkCourseId] = useState('');
   const [bulkType, setBulkType] = useState('COMPLETION');
 
-  const debouncedSearch = search.length >= 2 ? search : '';
+  const debouncedSearch = useDebounce(search, 350);
+  const isSearchActive = debouncedSearch.length >= 2;
 
-  const { data: searchResults, isLoading: searchLoading } = useQuery({
-    queryKey: ['lead-search', debouncedSearch],
-    queryFn: () => api.get(`/leads?search=${debouncedSearch}&limit=10`).then(r => r.data),
-    enabled: debouncedSearch.length >= 2,
+  // Search enrollments directly
+  const { data: searchData, isLoading: searchLoading } = useQuery({
+    queryKey: ['enrollment-search', debouncedSearch],
+    queryFn: () => api.get(`/enrollments?search=${encodeURIComponent(debouncedSearch)}&limit=10`).then(r => r.data),
+    enabled: isSearchActive,
   });
 
   const { data: certs, isLoading: certsLoading } = useQuery({
@@ -53,32 +157,16 @@ export default function CertificatesPage() {
     queryFn: () => api.get('/courses').then(r => r.data),
   });
 
-  const generateMutation = useMutation({
-    mutationFn: (body) => api.post('/certificates/generate', body),
-    onSuccess: (data) => {
-      toast.success('Certificate generated!');
-      setGeneratedCert(data.data);
-      qc.invalidateQueries({ queryKey: ['certificates'] });
-    },
-    onError: (err) => toast.error(err?.error || 'Failed to generate certificate'),
-  });
-
-  const handleGenerate = () => {
-    if (!selectedEnrollment) { toast.error('Select a student enrollment'); return; }
-    generateMutation.mutate({ enrollmentId: selectedEnrollment.id, type: certType });
-  };
-
-  const handleDownload = (certId, certNo) => {
+  const handleDownload = (certId) => {
     window.open(`${import.meta.env.VITE_API_URL || ''}/api/certificates/${certId}/download`, '_blank');
   };
 
-  const leads = searchResults?.data || [];
+  const enrollments = searchData?.data || [];
   const filteredCerts = (certs || []).filter(c =>
     !historySearch ||
     c.enrollment?.lead?.name?.toLowerCase().includes(historySearch.toLowerCase()) ||
     c.certificateNo?.includes(historySearch)
   );
-
   const courses = coursesData?.data || coursesData || [];
 
   return (
@@ -106,143 +194,58 @@ export default function CertificatesPage() {
 
       {/* Generate Tab */}
       {tab === 'generate' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left: Search and Select */}
-          <div className="space-y-4">
-            <div className="card">
-              <h3 className="font-semibold text-gray-900 mb-4">Search Student</h3>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  value={search}
-                  onChange={e => { setSearch(e.target.value); setSelectedEnrollment(null); setGeneratedCert(null); }}
-                  className="input pl-10"
-                  placeholder="Search by name or phone..."
-                />
-              </div>
-
-              {search.length >= 2 && (
-                <div className="mt-3 space-y-2">
-                  {searchLoading ? (
-                    <div className="text-sm text-gray-400 text-center py-4">Searching...</div>
-                  ) : leads.length === 0 ? (
-                    <div className="text-sm text-gray-400 text-center py-4">No students found</div>
-                  ) : leads.map(lead => (
-                    <motion.button
-                      key={lead.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      onClick={() => {
-                        if (lead.enrollment) { setSelectedEnrollment(lead.enrollment); setSearch(lead.name); }
-                        else toast.error(`${lead.name} has no enrollment`);
-                      }}
-                      className={`w-full text-left p-3 rounded-xl border transition-colors ${selectedEnrollment?.id === lead.enrollment?.id ? 'border-primary-400 bg-primary-50' : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-gray-900 text-sm">{lead.name}</div>
-                          <div className="text-xs text-gray-400">{lead.phone}</div>
-                        </div>
-                        <div className="text-right">
-                          {lead.enrollment ? (
-                            <>
-                              <div className="text-xs font-medium text-gray-600">{lead.enrollment?.course?.shortName}</div>
-                              <div className={`text-xs ${lead.enrollment?.status === 'COMPLETED' ? 'text-green-600' : 'text-blue-600'}`}>{lead.enrollment?.status}</div>
-                            </>
-                          ) : (
-                            <div className="text-xs text-red-400">Not enrolled</div>
-                          )}
-                        </div>
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              )}
+        <div className="space-y-4">
+          {/* Search */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-1">
+              <h3 className="font-semibold text-gray-900">Search Student</h3>
+              <span className="text-xs text-gray-400">Type name or phone number (min 2 chars)</span>
             </div>
-
-            {/* Certificate Type */}
-            <div className="card">
-              <h3 className="font-semibold text-gray-900 mb-4">Certificate Type</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {Object.entries(TYPE_CONFIG).map(([type, cfg]) => (
-                  <button
-                    key={type}
-                    onClick={() => setCertType(type)}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${certType === type ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'}`}
-                  >
-                    <cfg.icon className={`w-8 h-8 ${certType === type ? 'text-primary-600' : 'text-gray-400'}`} />
-                    <span className={`text-sm font-medium ${certType === type ? 'text-primary-700' : 'text-gray-600'}`}>{cfg.label}</span>
-                  </button>
-                ))}
-              </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="input pl-10"
+                placeholder="Search enrolled student by name or phone..."
+                autoFocus
+              />
             </div>
           </div>
 
-          {/* Right: Preview and Generate */}
-          <div className="space-y-4">
-            {selectedEnrollment ? (
-              <div className="card border-2 border-primary-100">
-                <h3 className="font-semibold text-gray-900 mb-4">Enrollment Details</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Student</span>
-                    <span className="font-medium text-gray-900">{selectedEnrollment?.lead?.name || 'N/A'}</span>
+          {/* Search Results */}
+          <AnimatePresence mode="wait">
+            {isSearchActive && (
+              <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {searchLoading ? (
+                  <div className="text-sm text-gray-400 text-center py-8 flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />Searching enrollments...
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Course</span>
-                    <span className="font-medium text-gray-900">{selectedEnrollment?.course?.name}</span>
+                ) : enrollments.length === 0 ? (
+                  <div className="text-center py-10 text-gray-400">
+                    <Search className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No enrolled students found for "{debouncedSearch}"</p>
+                    <p className="text-xs mt-1 text-gray-300">Only enrolled students appear here</p>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Enrolled</span>
-                    <span className="text-gray-600">{fmtDate(selectedEnrollment?.enrolledAt)}</span>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-xs text-gray-400 font-medium">{enrollments.length} enrollment{enrollments.length !== 1 ? 's' : ''} found</div>
+                    {enrollments.map(enr => (
+                      <EnrollmentCard key={enr.id} enrollment={enr} />
+                    ))}
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Status</span>
-                    <span className={`font-semibold ${selectedEnrollment?.status === 'COMPLETED' ? 'text-green-600' : 'text-blue-600'}`}>{selectedEnrollment?.status}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Receipt No</span>
-                    <span className="text-gray-600 font-mono text-xs">{selectedEnrollment?.receiptNo}</span>
-                  </div>
-                </div>
-                <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100">
-                  <div className="text-xs text-amber-700 font-medium">Certificate to Generate</div>
-                  <div className="text-sm font-bold text-amber-900 mt-0.5">{TYPE_CONFIG[certType]?.label} Certificate</div>
-                </div>
-                <button
-                  onClick={handleGenerate}
-                  disabled={generateMutation.isPending}
-                  className="w-full mt-4 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-60"
-                >
-                  {generateMutation.isPending ? 'Generating...' : 'Generate Certificate'}
-                </button>
-              </div>
-            ) : (
-              <div className="card flex flex-col items-center justify-center py-16 text-center">
-                <Award className="w-16 h-16 text-gray-200 mb-4" />
-                <p className="text-gray-400 text-sm">Search and select a student to generate their certificate</p>
-              </div>
-            )}
-
-            {/* Generated Certificate */}
-            {generatedCert && (
-              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="card border-2 border-green-200 bg-green-50">
-                <div className="flex items-center gap-3 mb-4">
-                  <CheckCircle className="w-8 h-8 text-green-500" />
-                  <div>
-                    <div className="font-bold text-green-800">Certificate Generated!</div>
-                    <div className="text-sm text-green-600">Certificate No: {generatedCert.certificateNo}</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleDownload(generatedCert.id, generatedCert.certificateNo)}
-                  className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-xl transition-colors"
-                >
-                  <Download className="w-4 h-4" /> Download Certificate
-                </button>
+                )}
               </motion.div>
             )}
-          </div>
+          </AnimatePresence>
+
+          {!isSearchActive && (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Award className="w-16 h-16 text-gray-200 mb-4" />
+              <p className="text-gray-400 text-sm">Search for an enrolled student to generate their certificate</p>
+              <p className="text-gray-300 text-xs mt-1">Green badge = fully paid & eligible • Orange = partial payment • Red = no payment</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -290,7 +293,7 @@ export default function CertificatesPage() {
                           <td className="px-4 py-3 text-gray-500">{cert.generatedBy?.name}</td>
                           <td className="px-4 py-3 text-center text-gray-500">{cert.downloadCount}</td>
                           <td className="px-4 py-3">
-                            <button onClick={() => handleDownload(cert.id, cert.certificateNo)} className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium">
+                            <button onClick={() => handleDownload(cert.id)} className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium">
                               <Download className="w-3.5 h-3.5" /> Download
                             </button>
                           </td>
@@ -307,8 +310,8 @@ export default function CertificatesPage() {
 
       {/* Bulk Generation */}
       <div className="card border border-dashed border-gray-200">
-        <h3 className="font-semibold text-gray-900 mb-4">Bulk Certificate Generation</h3>
-        <p className="text-sm text-gray-500 mb-4">Generate certificates for all completed enrollments in a course batch.</p>
+        <h3 className="font-semibold text-gray-900 mb-1">Bulk Certificate Generation</h3>
+        <p className="text-sm text-gray-500 mb-4">Generate certificates for all completed enrollments in a course.</p>
         <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="label text-xs">Course</label>
@@ -332,10 +335,10 @@ export default function CertificatesPage() {
                 const ids = (enrollments?.data || []).map(e => e.id);
                 if (!ids.length) { toast.error('No completed enrollments found'); return; }
                 const result = await api.post('/certificates/bulk', { enrollmentIds: ids, type: bulkType });
-                toast.success(`Generated ${result.data?.length || 0} certificates!`);
+                toast.success(`Generated ${result.data?.length || ids.length} certificates!`);
                 qc.invalidateQueries({ queryKey: ['certificates'] });
               } catch (err) {
-                toast.error(err?.error || 'Bulk generation failed');
+                toast.error(err?.response?.data?.error || 'Bulk generation failed');
               }
             }}
             className="btn-primary"

@@ -138,48 +138,54 @@ async function buildCertData(enrollment) {
 }
 
 // POST /api/certificates/generate
-router.post('/generate', [
-  body('enrollmentId').notEmpty(),
-  body('type').isIn(['COMPLETION', 'INTERNSHIP']),
-], authorize('SUPER_ADMIN', 'ADMIN', 'FACULTY'), async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-  try {
-    const { enrollmentId, type } = req.body;
+router.post('/generate',
+  authorize('SUPER_ADMIN', 'ADMIN', 'FACULTY'),
+  [
+    body('enrollmentId').notEmpty().withMessage('enrollmentId is required'),
+    body('type').isIn(['COMPLETION', 'INTERNSHIP']).withMessage('type must be COMPLETION or INTERNSHIP'),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    try {
+      const { enrollmentId, type } = req.body;
 
-    const enrollment = await prisma.enrollment.findUnique({
-      where: { id: enrollmentId },
-      include: { lead: true, course: true },
-    });
-    if (!enrollment) return res.status(404).json({ error: 'Enrollment not found' });
+      const enrollment = await prisma.enrollment.findUnique({
+        where: { id: enrollmentId },
+        include: { lead: true, course: true },
+      });
+      if (!enrollment) return res.status(404).json({ error: `Enrollment not found: ${enrollmentId}` });
+      if (!enrollment.lead) return res.status(404).json({ error: 'Enrollment has no associated student' });
+      if (!enrollment.course) return res.status(404).json({ error: 'Enrollment has no associated course' });
 
-    const certNo = generateCertNo();
-    const certData = await buildCertData(enrollment);
-    const { filePath, filename } = await generateCertificatePDF({ ...certData, type, certificateNo: certNo });
+      const certNo = generateCertNo();
+      const certData = await buildCertData(enrollment);
+      await generateCertificatePDF({ ...certData, type, certificateNo: certNo });
 
-    const certificate = await prisma.certificate.create({
-      data: {
-        enrollmentId,
-        type,
-        certificateNo: certNo,
-        generatedById: req.user.id,
-        templateUsed: type === 'INTERNSHIP' ? 'internship-v1' : 'completion-v1',
-      },
-      include: {
-        enrollment: { include: { lead: { select: { name: true } }, course: { select: { name: true } } } },
-        generatedBy: { select: { name: true } },
-      },
-    });
+      const certificate = await prisma.certificate.create({
+        data: {
+          enrollmentId,
+          type,
+          certificateNo: certNo,
+          generatedById: req.user.id,
+          templateUsed: type === 'INTERNSHIP' ? 'internship-v1' : 'completion-v1',
+        },
+        include: {
+          enrollment: { include: { lead: { select: { name: true } }, course: { select: { name: true } } } },
+          generatedBy: { select: { name: true } },
+        },
+      });
 
-    res.status(201).json({
-      ...certificate,
-      downloadUrl: `/uploads/certificates/${filename}`,
-    });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+      res.status(201).json({
+        ...certificate,
+        downloadUrl: `/api/certificates/${certificate.id}/download`,
+      });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  }
+);
 
 // GET /api/certificates
-router.get('/', authorize('SUPER_ADMIN', 'ADMIN', 'FACULTY', 'ACCOUNTANT', 'COUNSELOR'), async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { type, enrollmentId } = req.query;
     const where = {};
