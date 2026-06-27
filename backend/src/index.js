@@ -25,6 +25,9 @@ import userRoutes from './routes/users.js';
 import campaignRoutes from './routes/campaigns.js';
 import settingsRoutes from './routes/settings.js';
 import metaRoutes from './routes/meta.js';
+import financeRoutes from './routes/finance.js';
+import certificateRoutes from './routes/certificates.js';
+import aiCommandRoutes from './routes/aicommand.js';
 import { sendInstallmentReminders } from './services/reminderService.js';
 
 const app = express();
@@ -66,6 +69,9 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/meta', metaRoutes);
+app.use('/api/finance', financeRoutes);
+app.use('/api/certificates', certificateRoutes);
+app.use('/api/aicommand', aiCommandRoutes);
 
 app.use((err, req, res, next) => {
   logger.error(`${err.status || 500} - ${err.message} - ${req.originalUrl}`);

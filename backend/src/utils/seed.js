@@ -29,6 +29,14 @@ async function main() {
     create: { name: 'Rahul Menon', email: 'counselor@futureoptima.in', passwordHash: counselorHash, role: 'COUNSELOR' },
   });
 
+  // Finance / Accountant
+  const financeHash = await bcrypt.hash('Finance@123', 12);
+  await prisma.user.upsert({
+    where: { email: 'finance@futureoptima.in' },
+    update: {},
+    create: { name: 'Finance Manager', email: 'finance@futureoptima.in', passwordHash: financeHash, role: 'ACCOUNTANT' },
+  });
+
   // Courses
   const courses = [
     { courseId: 'AI_ENGINEERING', name: 'Professional AI Engineering & Automation Programme', shortName: 'AI Eng', duration: '6 months', totalHours: 360, fees: 75000, highlights: ['LLMs & Prompt Engineering', 'AI Agents & Automation', 'MLOps & Deployment', 'Real-world Projects'] },
@@ -58,6 +66,7 @@ async function main() {
   console.log('✅ Seed complete!');
   console.log('👤 Admin: admin@futureoptima.in / FutureOptima@2025');
   console.log('👤 Counselor: counselor@futureoptima.in / Counselor@123');
+  console.log('👤 Finance: finance@futureoptima.in / Finance@123');
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());

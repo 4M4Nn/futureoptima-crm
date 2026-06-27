@@ -19,6 +19,12 @@ import UsersPage from './pages/UsersPage';
 import MetaAdsPage from './pages/MetaAdsPage';
 import ReportsPage from './pages/ReportsPage';
 import FollowUpsPage from './pages/FollowUpsPage';
+import FinanceDashboard from './pages/finance/FinanceDashboard';
+import ExpensesPage from './pages/finance/ExpensesPage';
+import SalaryPage from './pages/finance/SalaryPage';
+import FinanceReportsPage from './pages/finance/FinanceReportsPage';
+import CertificatesPage from './pages/CertificatesPage';
+import AIChatbotPage from './pages/AIChatbotPage';
 
 function PrivateRoute({ children }) {
   const { isAuthenticated } = useAuthStore();
@@ -49,6 +55,12 @@ export default function App() {
           <Route path="courses" element={<CoursesPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="finance" element={<FinanceDashboard />} />
+          <Route path="finance/expenses" element={<ExpensesPage />} />
+          <Route path="finance/salary" element={<SalaryPage />} />
+          <Route path="finance/reports" element={<FinanceReportsPage />} />
+          <Route path="certificates" element={<CertificatesPage />} />
+          <Route path="chatbot" element={<AIChatbotPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

@@ -138,6 +138,10 @@ model User {
   payments     Payment[]
   campaigns    Campaign[]
   aiSessions   AISession[]
+  expenses     Expense[]
+  salaries     SalaryRecord[]
+  certificates Certificate[]  @relation("GeneratedBy")
+  aiCommands   AICommand[]
 
   @@index([email])
   @@index([role])
@@ -263,6 +267,7 @@ model Enrollment {
   payments        Payment[]
   installments    Installment[]
   documents       Document[]
+  certificates    Certificate[]
 }
 
 model Payment {
@@ -438,4 +443,70 @@ model SystemSettings {
   key       String   @unique
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model Expense {
+  id            String   @id @default(cuid())
+  category      String
+  amount        Float
+  date          DateTime
+  paymentMethod String
+  vendor        String?
+  notes         String?
+  addedById     String
+  addedBy       User     @relation(fields: [addedById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SalaryRecord {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  month         Int
+  year          Int
+  basicSalary   Float
+  bonus         Float     @default(0)
+  deductions    Float     @default(0)
+  netSalary     Float
+  paymentDate   DateTime?
+  paymentStatus String    @default("PENDING")
+  paymentMethod String?
+  notes         String?
+  slipGenerated Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+}
+
+model Certificate {
+  id            String     @id @default(cuid())
+  enrollmentId  String
+  enrollment    Enrollment @relation(fields: [enrollmentId], references: [id])
+  type          String
+  certificateNo String     @unique
+  issuedAt      DateTime   @default(now())
+  generatedById String
+  generatedBy   User       @relation("GeneratedBy", fields: [generatedById], references: [id])
+  templateUsed  String
+  downloadCount Int        @default(0)
+  createdAt     DateTime   @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  module    String
+  details   Json?
+  createdAt DateTime @default(now())
+}
+
+model AICommand {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  command   String
+  action    String
+  result    String
+  success   Boolean
+  createdAt DateTime @default(now())
 }

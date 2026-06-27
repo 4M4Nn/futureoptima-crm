@@ -349,13 +349,12 @@ export default function DashboardPage() {
           </Link>
         </div>
       </div>
+      <QuickCallModal
+        lead={quickCallLead}
+        open={!!quickCallLead}
+        onClose={() => setQuickCallLead(null)}
+        onSuccess={() => setQuickCallLead(null)}
+      />
     </div>
-
-    <QuickCallModal
-      lead={quickCallLead}
-      open={!!quickCallLead}
-      onClose={() => setQuickCallLead(null)}
-      onSuccess={() => setQuickCallLead(null)}
-    />
   );
 }

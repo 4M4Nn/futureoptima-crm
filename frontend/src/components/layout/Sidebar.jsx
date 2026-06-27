@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, GraduationCap, CreditCard, BarChart3, Bot, CheckSquare, Megaphone, MessageSquare, BookOpen, Settings, UserCog, ChevronLeft, ChevronRight, Zap, Share2, FileText, PhoneCall } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, CreditCard, BarChart3, Bot, CheckSquare, Megaphone, MessageSquare, BookOpen, Settings, UserCog, ChevronLeft, ChevronRight, Zap, Share2, FileText, PhoneCall, DollarSign, Receipt, Wallet, FileBarChart, Award, MessageCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/authStore';
@@ -20,8 +20,17 @@ const navItems = [
   { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
   { to: '/whatsapp', icon: MessageSquare, label: 'WhatsApp' },
   { to: '/courses', icon: BookOpen, label: 'Courses' },
+  { to: '/certificates', icon: Award, label: 'Certificates' },
+  { to: '/chatbot', icon: MessageCircle, label: 'AI Chatbot', badge: 'New' },
   { to: '/users', icon: UserCog, label: 'Users', adminOnly: true },
   { to: '/settings', icon: Settings, label: 'Settings' },
+];
+
+const financeItems = [
+  { to: '/finance', icon: DollarSign, label: 'Finance Dashboard' },
+  { to: '/finance/expenses', icon: Receipt, label: 'Expenses' },
+  { to: '/finance/salary', icon: Wallet, label: 'Salary' },
+  { to: '/finance/reports', icon: FileBarChart, label: 'Finance Reports' },
 ];
 
 export default function Sidebar() {
@@ -73,7 +82,7 @@ export default function Sidebar() {
         {navItems.map((item) => {
           if (item.adminOnly && !['SUPER_ADMIN', 'ADMIN'].includes(user?.role)) return null;
           return (
-            <NavLink key={item.to} to={item.to} className={({ isActive }) => clsx(isActive ? 'sidebar-link-active' : 'sidebar-link-inactive', 'relative')}>
+            <NavLink key={item.to} to={item.to} end={item.to === '/finance'} className={({ isActive }) => clsx(isActive ? 'sidebar-link-active' : 'sidebar-link-inactive', 'relative')}>
               <item.icon className="w-5 h-5 flex-shrink-0" />
               {!collapsed && <span className="flex-1">{item.label}</span>}
               {!collapsed && item.followupBadge && followupCount > 0 && (
@@ -88,6 +97,20 @@ export default function Sidebar() {
             </NavLink>
           );
         })}
+
+        {/* Finance Section */}
+        {['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'].includes(user?.role) && (
+          <>
+            {!collapsed && <div className="px-3 pt-3 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wider">Finance</div>}
+            {collapsed && <div className="border-t border-gray-100 my-1" />}
+            {financeItems.map(item => (
+              <NavLink key={item.to} to={item.to} end={item.to === '/finance'} className={({ isActive }) => clsx(isActive ? 'sidebar-link-active' : 'sidebar-link-inactive', 'relative')}>
+                <item.icon className="w-5 h-5 flex-shrink-0" />
+                {!collapsed && <span className="flex-1">{item.label}</span>}
+              </NavLink>
+            ))}
+          </>
+        )}
       </nav>
 
       {/* User */}
