@@ -261,8 +261,8 @@ export default function CoursesPage() {
 
       {/* Add Course Modal */}
       <Modal open={showCourseModal} onClose={() => { setShowCourseModal(false); setCourseForm(EMPTY_COURSE); }} title="Add / Update Course" size="lg">
-        <form onSubmit={submitCourse} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+        <form onSubmit={submitCourse} className="p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="label">Course ID *</label>
               <select value={courseForm.courseId} onChange={e => {
@@ -330,8 +330,8 @@ export default function CoursesPage() {
 
       {/* Add / Edit Batch Modal */}
       <Modal open={showBatchModal} onClose={() => { setShowBatchModal(false); setEditBatch(null); setBatchForm(EMPTY_BATCH); }} title={editBatch ? 'Edit Batch' : 'Add New Batch'} size="lg">
-        <form onSubmit={submitBatch} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+        <form onSubmit={submitBatch} className="p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Batch Name *</label>
               <input value={batchForm.batchName} onChange={e => setBatchForm(f => ({ ...f, batchName: e.target.value }))} className="input" required placeholder="e.g. AI Batch 12" />
@@ -358,7 +358,7 @@ export default function CoursesPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Start Date *</label>
               <input type="date" value={batchForm.startDate} onChange={e => setBatchForm(f => ({ ...f, startDate: e.target.value }))} className="input" required />

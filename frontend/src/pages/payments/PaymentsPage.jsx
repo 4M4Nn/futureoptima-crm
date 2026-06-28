@@ -127,7 +127,7 @@ function AddPaymentModal({ open, onClose }) {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input label="Amount (₹) *" type="number" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} placeholder="15000" />
               <Select label="Payment Method *" value={form.method} onChange={v => setForm(p => ({ ...p, method: v }))} options={METHOD_OPTS} />
               <Input label="Transaction / Ref ID" value={form.transactionId} onChange={e => setForm(p => ({ ...p, transactionId: e.target.value }))} placeholder="UPI ref / cheque no" />
@@ -156,12 +156,12 @@ export default function PaymentsPage() {
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="page-title">Payments & Fees</h1>
           <p className="text-gray-500 text-sm">PDF receipts auto-generated on every payment</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn-primary"><Plus className="w-4 h-4" />Record Payment</button>
+        <button onClick={() => setShowAdd(true)} className="btn-primary flex-shrink-0"><Plus className="w-4 h-4" />Record Payment</button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

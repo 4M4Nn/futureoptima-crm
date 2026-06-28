@@ -39,3 +39,13 @@
 .gold-gradient { background: linear-gradient(135deg, #F59E0B, #D97706); }
 .glass { background: rgba(255,255,255,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .ai-glow { box-shadow: 0 0 20px rgba(99,102,241,0.3), 0 0 40px rgba(99,102,241,0.1); }
+
+/* Mobile touch targets & iOS zoom prevention */
+@media (max-width: 767px) {
+  .input, input, select, textarea { font-size: 16px !important; min-height: 44px; }
+  .btn-primary, .btn-secondary, .btn-gold, .btn-danger { min-height: 44px; }
+  .card-header { @apply px-4 py-3; }
+  .card-body { @apply px-4 py-3; }
+  .stat-card { @apply p-4; }
+  .page-title { @apply text-xl; }
+}

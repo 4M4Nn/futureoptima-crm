@@ -119,8 +119,8 @@ export default function ForecastPage() {
             ))}
           </div>
 
-          <div className="bg-gray-50 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-gray-50 rounded-xl overflow-x-auto">
+            <table className="w-full text-sm min-w-[400px]">
               <thead><tr className="bg-gray-100">
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">Source</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500">Count</th>

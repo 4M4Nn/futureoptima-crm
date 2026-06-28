@@ -163,7 +163,7 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
 
   return (
     <Modal open={open} onClose={handleClose} title="Enroll Student" size="lg">
-      <div className="p-6 space-y-4">
+      <div className="p-5 space-y-4">
         <div>
           <label className="label">Course *</label>
           <select className="input" value={courseId} onChange={e => handleCourseChange(e.target.value)}>
@@ -186,7 +186,7 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
           </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="label">Course Fee (₹) *</label>
             <input className="input" type="number" value={courseFee} onChange={e => setCourseFee(e.target.value)} placeholder="75000" min="0" />
@@ -291,34 +291,38 @@ export default function LeadDetailPage() {
   return (
     <div className="space-y-5 animate-fade-in max-w-7xl mx-auto">
       {/* Back + header */}
-      <div className="flex items-start gap-4">
-        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 mt-1"><ArrowLeft className="w-5 h-5" /></button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="page-title">{lead.name}</h1>
-            <StatusBadge status={lead.status} />
-            <GradeBadge grade={lead.aiGrade} score={lead.aiScore} />
+      <div className="flex items-start gap-3">
+        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 mt-1 flex-shrink-0"><ArrowLeft className="w-5 h-5" /></button>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="page-title">{lead.name}</h1>
+                <StatusBadge status={lead.status} />
+                <GradeBadge grade={lead.aiGrade} score={lead.aiScore} />
+              </div>
+              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                <span className="flex items-center gap-1 text-sm text-gray-500"><Phone className="w-4 h-4" />{lead.phone}</span>
+                {lead.email && <span className="flex items-center gap-1 text-sm text-gray-500"><Mail className="w-4 h-4" />{lead.email}</span>}
+                {lead.city && <span className="flex items-center gap-1 text-sm text-gray-500"><MapPin className="w-4 h-4" />{lead.city}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+              <select className="input w-auto text-sm" value={lead.status} onChange={e => updateStatus(e.target.value)}>
+                {['NEW','CONTACTED','QUALIFIED','DEMO_SCHEDULED','PROPOSAL_SENT','NEGOTIATION','NURTURING','WON','LOST'].map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+              </select>
+              {!lead.enrollment && (
+                <button onClick={() => setShowEnroll(true)} className="btn-gold text-sm">
+                  <GraduationCap className="w-4 h-4" />Enroll
+                </button>
+              )}
+              {lead.enrollment && (
+                <Link to={`/students/${lead.enrollment.id}`} className="btn-primary text-sm">
+                  <CreditCard className="w-4 h-4" />View Enrollment
+                </Link>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-4 mt-2 flex-wrap">
-            <span className="flex items-center gap-1 text-sm text-gray-500"><Phone className="w-4 h-4" />{lead.phone}</span>
-            {lead.email && <span className="flex items-center gap-1 text-sm text-gray-500"><Mail className="w-4 h-4" />{lead.email}</span>}
-            {lead.city && <span className="flex items-center gap-1 text-sm text-gray-500"><MapPin className="w-4 h-4" />{lead.city}</span>}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <select className="input w-auto text-sm" value={lead.status} onChange={e => updateStatus(e.target.value)}>
-            {['NEW','CONTACTED','QUALIFIED','DEMO_SCHEDULED','PROPOSAL_SENT','NEGOTIATION','NURTURING','WON','LOST'].map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
-          </select>
-          {!lead.enrollment && (
-            <button onClick={() => setShowEnroll(true)} className="btn-gold text-sm">
-              <GraduationCap className="w-4 h-4" />Enroll
-            </button>
-          )}
-          {lead.enrollment && (
-            <Link to={`/students/${lead.enrollment.id}`} className="btn-primary text-sm">
-              <CreditCard className="w-4 h-4" />View Enrollment
-            </Link>
-          )}
         </div>
       </div>
 

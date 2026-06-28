@@ -4,20 +4,25 @@ import clsx from 'clsx';
 
 // Modal
 export function Modal({ open, onClose, title, children, size = 'md' }) {
-  const sizes = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', full: 'max-w-6xl' };
+  const sizes = { sm: 'sm:max-w-md', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: 'sm:max-w-4xl', full: 'sm:max-w-6xl' };
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-          <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className={clsx('relative bg-white rounded-2xl shadow-2xl w-full z-10', sizes[size])}>
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            className={clsx('relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full z-10 flex flex-col max-h-[92vh] sm:max-h-[85vh]', sizes[size])}
+          >
             {title && (
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-                <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><X className="w-5 h-5" /></button>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+                <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+                <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 min-w-[44px] min-h-[44px] flex items-center justify-center"><X className="w-5 h-5" /></button>
               </div>
             )}
-            {children}
+            <div className="overflow-y-auto flex-1">{children}</div>
           </motion.div>
         </div>
       )}

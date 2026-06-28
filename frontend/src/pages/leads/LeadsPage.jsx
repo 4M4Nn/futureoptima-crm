@@ -46,7 +46,7 @@ function AddLeadModal({ open, onClose }) {
 
   return (
     <Modal open={open} onClose={onClose} title="Add New Lead" size="lg">
-      <div className="p-6 grid grid-cols-2 gap-4">
+      <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="col-span-2">
           <label className="label">Full Name *</label>
           <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Arjun Menon" />
@@ -113,12 +113,12 @@ export default function LeadsPage() {
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="page-title">Lead Management</h1>
           <p className="text-gray-500 text-sm">{data?.pagination?.total?.toLocaleString("en-IN") || 0} total leads</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button onClick={batchScore} className="btn-secondary text-sm"><Bot className="w-4 h-4" />Score All</button>
           <button onClick={() => setShowAdd(true)} className="btn-primary text-sm"><Plus className="w-4 h-4" />Add Lead</button>
         </div>

@@ -247,13 +247,13 @@ export default function StudentDetailPage() {
 
   return (
     <div className="space-y-5 animate-fade-in max-w-5xl mx-auto">
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500"><ArrowLeft className="w-5 h-5" /></button>
-        <div>
-          <h1 className="page-title">{enrollment.lead?.name}</h1>
+      <div className="flex items-start gap-3">
+        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 flex-shrink-0 mt-0.5"><ArrowLeft className="w-5 h-5" /></button>
+        <div className="flex-1 min-w-0">
+          <h1 className="page-title truncate">{enrollment.lead?.name}</h1>
           <p className="text-gray-500 text-sm">{enrollment.lead?.phone} • {enrollment.receiptNo}</p>
         </div>
-        <div className="ml-auto flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-1.5 flex-shrink-0">
           <StatusBadge status={enrollment.status} />
           <StatusBadge status={enrollment.paymentStatus} />
         </div>

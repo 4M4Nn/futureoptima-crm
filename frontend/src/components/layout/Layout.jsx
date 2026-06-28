@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Outlet, useLocation, Link } from 'react-router-dom';
-import { Bot, Send, X, ExternalLink, Mic } from 'lucide-react';
+import { Outlet, useLocation, Link, NavLink } from 'react-router-dom';
+import { Bot, Send, X, ExternalLink, LayoutDashboard, Users, PhoneCall, DollarSign, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import api from '../../utils/api';
-import { fmt, fmtDate } from '../../utils/constants';
+import { fmt } from '../../utils/constants';
 
 const TITLES = {
   '/dashboard': 'Dashboard', '/leads': 'Lead Management', '/students': 'Students',
@@ -15,10 +15,17 @@ const TITLES = {
   '/finance': 'Finance Dashboard', '/finance/expenses': 'Expenses',
   '/finance/salary': 'Salary Management', '/finance/reports': 'Finance Reports',
   '/certificates': 'Certificates', '/chatbot': 'AI Command Center',
-  '/followups': 'Follow-ups', '/reports': 'Reports', '/meta': 'Meta Ads',
+  '/followups': 'Follow-ups', '/reports': 'Reports', '/forecast': 'Forecast & Targets',
 };
 
-function FloatingChat({ open, onClose }) {
+const BOTTOM_NAV = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
+  { to: '/leads', icon: Users, label: 'Leads' },
+  { to: '/followups', icon: PhoneCall, label: 'Follow-ups' },
+  { to: '/finance', icon: DollarSign, label: 'Finance' },
+];
+
+function FloatingChat({ open, onClose, isMobile }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -50,7 +57,12 @@ function FloatingChat({ open, onClose }) {
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          className="fixed bottom-20 right-4 w-96 h-[520px] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 flex flex-col overflow-hidden"
+          className={
+            isMobile
+              ? 'fixed inset-0 z-50 bg-white flex flex-col'
+              : 'fixed bottom-24 right-4 w-96 h-[520px] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 flex flex-col overflow-hidden'
+          }
+          style={!isMobile ? { borderRadius: '1rem' } : {}}
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-3 flex items-center justify-between flex-shrink-0">
@@ -60,11 +72,11 @@ function FloatingChat({ open, onClose }) {
               <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
             </div>
             <div className="flex items-center gap-1">
-              <Link to="/chatbot" onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+              <Link to="/chatbot" onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
                 <ExternalLink className="w-4 h-4 text-white/80" />
               </Link>
-              <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
-                <X className="w-4 h-4 text-white" />
+              <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-white" />
               </button>
             </div>
           </div>
@@ -128,17 +140,19 @@ function FloatingChat({ open, onClose }) {
           </div>
 
           {/* Input */}
-          <form onSubmit={(e) => { e.preventDefault(); sendCommand(input); }} className="flex-shrink-0 p-3 border-t border-gray-100">
+          <form onSubmit={(e) => { e.preventDefault(); sendCommand(input); }}
+            className="flex-shrink-0 p-3 border-t border-gray-100 pb-safe">
             <div className="flex gap-2 bg-gray-50 rounded-xl px-3 py-2">
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 placeholder="Type a command..."
-                className="flex-1 text-xs bg-transparent outline-none text-gray-900 placeholder-gray-400"
+                className="flex-1 text-sm bg-transparent outline-none text-gray-900 placeholder-gray-400 min-h-[44px]"
+                style={{ fontSize: '16px' }}
                 disabled={isTyping}
               />
-              <button type="submit" disabled={isTyping || !input.trim()} className="w-7 h-7 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white rounded-lg flex items-center justify-center">
-                <Send className="w-3.5 h-3.5" />
+              <button type="submit" disabled={isTyping || !input.trim()} className="w-10 h-10 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white rounded-lg flex items-center justify-center flex-shrink-0">
+                <Send className="w-4 h-4" />
               </button>
             </div>
           </form>
@@ -151,32 +165,80 @@ function FloatingChat({ open, onClose }) {
 export default function Layout() {
   const { pathname } = useLocation();
   const [chatOpen, setChatOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
+  // close mobile sidebar on route change
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
   const title = Object.entries(TITLES).find(([k]) => pathname.startsWith(k))?.[1] || 'Nexora CRM';
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar title={title} />
-        <main className="flex-1 overflow-y-auto p-6">
+      <Sidebar isMobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
+
+      {/* Mobile overlay */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setMobileOpen(false)}
+            className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <Topbar title={title} onMenuClick={() => setMobileOpen(o => !o)} />
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6">
           <Outlet />
         </main>
       </div>
 
-      {/* Floating Chatbot */}
+      {/* Floating Chatbot — desktop only in corner, mobile is full-screen */}
       {pathname !== '/chatbot' && (
         <>
-          <FloatingChat open={chatOpen} onClose={() => setChatOpen(false)} />
+          <FloatingChat open={chatOpen} onClose={() => setChatOpen(false)} isMobile={isMobile} />
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setChatOpen(o => !o)}
-            className="fixed bottom-4 right-4 w-14 h-14 bg-gradient-to-br from-purple-600 to-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center z-40 hover:shadow-xl transition-shadow"
+            className="fixed bottom-20 right-4 md:bottom-6 w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-purple-600 to-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center z-40 hover:shadow-xl transition-shadow"
           >
-            {chatOpen ? <X className="w-6 h-6" /> : <Bot className="w-6 h-6" />}
+            {chatOpen ? <X className="w-5 h-5 md:w-6 md:h-6" /> : <Bot className="w-5 h-5 md:w-6 md:h-6" />}
           </motion.button>
         </>
       )}
+
+      {/* Bottom Navigation — mobile only */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] md:hidden flex">
+        {BOTTOM_NAV.map(item => (
+          <NavLink key={item.to} to={item.to} end={item.to === '/finance'}
+            className={({ isActive }) =>
+              `flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-xs font-medium transition-colors ${isActive ? 'text-primary-600' : 'text-gray-400'}`
+            }>
+            {({ isActive }) => (
+              <>
+                <item.icon className={`w-5 h-5 ${isActive ? 'text-primary-600' : 'text-gray-400'}`} />
+                <span className={isActive ? 'text-primary-600' : ''}>{item.label}</span>
+              </>
+            )}
+          </NavLink>
+        ))}
+        <button
+          onClick={() => setMobileOpen(o => !o)}
+          className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-xs font-medium text-gray-400"
+        >
+          <Menu className="w-5 h-5" />
+          <span>More</span>
+        </button>
+      </nav>
     </div>
   );
 }
