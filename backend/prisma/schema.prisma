@@ -286,6 +286,9 @@ model Payment {
   collectedBy    User          @relation(fields: [collectedById], references: [id])
   receiptSentAt  DateTime?
   receiptMsgId   String?
+  isCancelled    Boolean       @default(false)
+  cancelledAt    DateTime?
+  cancelReason   String?
   createdAt      DateTime      @default(now())
 
   @@index([enrollmentId])

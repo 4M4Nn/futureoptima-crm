@@ -4,7 +4,7 @@ import { Plus, CheckCircle, Clock, AlertTriangle, Bot, Loader2 } from 'lucide-re
 import { motion } from 'framer-motion';
 import api from '../utils/api';
 import { fmtDate } from '../utils/constants';
-import { Modal, Input, Select, LoadingState, EmptyState, StatusBadge } from '../components/ui/index';
+import { Modal, Input, Select, LoadingState, EmptyState, StatusBadge, ConfirmDialog } from '../components/ui/index';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -50,6 +50,7 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState('PENDING');
   const [aiSuggestions, setAiSuggestions] = useState('');
   const [loadingAI, setLoadingAI] = useState(false);
+  const [deleteTaskTarget, setDeleteTaskTarget] = useState(null);
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['tasks', statusFilter],
@@ -118,7 +119,7 @@ export default function TasksPage() {
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-3"><AlertTriangle className="w-4 h-4 text-red-600" /><span className="font-semibold text-red-700 text-sm">{overdue.length} Overdue Task{overdue.length > 1 ? 's' : ''}</span></div>
           <div className="space-y-2">
-            {overdue.map(task => <TaskCard key={task.id} task={task} onDone={() => markDone.mutate(task.id)} onDelete={() => deleteTask.mutate(task.id)} overdue />)}
+            {overdue.map(task => <TaskCard key={task.id} task={task} onDone={() => markDone.mutate(task.id)} onDelete={() => setDeleteTaskTarget(task)} overdue />)}
           </div>
         </div>
       )}
@@ -127,13 +128,23 @@ export default function TasksPage() {
       {isLoading ? <LoadingState /> : (
         <div className="space-y-2">
           {(statusFilter === 'DONE' ? done : statusFilter === 'IN_PROGRESS' ? inProgress : statusFilter === 'PENDING' ? pending : tasks)?.map(task => (
-            <TaskCard key={task.id} task={task} onDone={() => markDone.mutate(task.id)} onDelete={() => deleteTask.mutate(task.id)} />
+            <TaskCard key={task.id} task={task} onDone={() => markDone.mutate(task.id)} onDelete={() => setDeleteTaskTarget(task)} />
           ))}
           {!tasks?.length && <EmptyState title="No tasks found" description="Add your first task or get AI suggestions" action={<button onClick={() => setShowAdd(true)} className="btn-primary mx-auto">Add Task</button>} />}
         </div>
       )}
 
       <AddTaskModal open={showAdd} onClose={() => setShowAdd(false)} />
+      <ConfirmDialog
+        open={!!deleteTaskTarget}
+        onClose={() => setDeleteTaskTarget(null)}
+        onConfirm={() => { deleteTask.mutate(deleteTaskTarget?.id); setDeleteTaskTarget(null); }}
+        loading={deleteTask.isPending}
+        danger
+        title="Delete task?"
+        message={`"${deleteTaskTarget?.title}"\n\nThis task will be permanently deleted.`}
+        confirmLabel="Delete Task"
+      />
     </div>
   );
 }

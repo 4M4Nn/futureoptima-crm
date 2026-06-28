@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CreditCard, CheckCircle, GraduationCap, Bot, Loader2, Download, Award, Banknote, X } from 'lucide-react';
+import { ArrowLeft, CreditCard, CheckCircle, GraduationCap, Bot, Loader2, Download, Award, Banknote, X, Trash2, Ban } from 'lucide-react';
 import api from '../../utils/api';
 import { fmt, fmtDate, fmtDatetime } from '../../utils/constants';
-import { LoadingState, StatusBadge, Modal, Input, Select } from '../../components/ui/index';
+import { LoadingState, StatusBadge, Modal, Input, Select, ConfirmDialog } from '../../components/ui/index';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 
 async function downloadReceipt(paymentId, receiptNumber) {
@@ -216,11 +217,27 @@ export default function StudentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuthStore();
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
   const [payInst, setPayInst] = useState(null);
   const [showPayFull, setShowPayFull] = useState(false);
   const [tab, setTab] = useState('installments');
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [loadingAI, setLoadingAI] = useState(false);
+  const [showDeleteEnrollment, setShowDeleteEnrollment] = useState(false);
+  const [cancelPayment, setCancelPayment] = useState(null);
+
+  const deleteEnrollmentMutation = useMutation({
+    mutationFn: () => api.delete(`/enrollments/${id}`),
+    onSuccess: () => { toast.success('Enrollment deleted'); navigate('/students'); },
+    onError: (e) => { toast.error(e?.response?.data?.error || 'Delete failed'); setShowDeleteEnrollment(false); },
+  });
+
+  const cancelPaymentMutation = useMutation({
+    mutationFn: ({ paymentId, reason }) => api.patch(`/payments/${paymentId}/cancel`, { reason }),
+    onSuccess: () => { toast.success('Payment cancelled'); qc.invalidateQueries(['enrollment', id]); setCancelPayment(null); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Cancel failed'),
+  });
 
   const { data: enrollment, isLoading } = useQuery({
     queryKey: ['enrollment', id],
@@ -253,9 +270,16 @@ export default function StudentDetailPage() {
           <h1 className="page-title truncate">{enrollment.lead?.name}</h1>
           <p className="text-gray-500 text-sm">{enrollment.lead?.phone} • {enrollment.receiptNo}</p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-1.5 flex-shrink-0">
-          <StatusBadge status={enrollment.status} />
-          <StatusBadge status={enrollment.paymentStatus} />
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 flex-shrink-0">
+          <div className="flex gap-1.5">
+            <StatusBadge status={enrollment.status} />
+            <StatusBadge status={enrollment.paymentStatus} />
+          </div>
+          {isAdmin && (
+            <button onClick={() => setShowDeleteEnrollment(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 border border-red-200 rounded-xl transition-colors">
+              <Trash2 className="w-3.5 h-3.5" />Delete
+            </button>
+          )}
         </div>
       </div>
 
@@ -334,19 +358,28 @@ export default function StudentDetailPage() {
             {tab === 'payments' && (
               <div className="p-4 space-y-2">
                 {enrollment.payments?.map(p => (
-                  <div key={p.id} className="flex items-center gap-4 p-3 rounded-xl border border-gray-100 bg-gray-50">
-                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center"><CheckCircle className="w-4 h-4 text-green-600" /></div>
+                  <div key={p.id} className={`flex items-center gap-4 p-3 rounded-xl border ${p.isCancelled ? 'border-red-100 bg-red-50 opacity-70' : 'border-gray-100 bg-gray-50'}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${p.isCancelled ? 'bg-red-100' : 'bg-green-100'}`}>
+                      {p.isCancelled ? <Ban className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-green-600" />}
+                    </div>
                     <div className="flex-1">
-                      <div className="text-sm font-semibold text-gray-900">{p.receiptNumber}</div>
+                      <div className="text-sm font-semibold text-gray-900">{p.receiptNumber} {p.isCancelled && <span className="text-xs text-red-500 font-normal ml-1">CANCELLED</span>}</div>
                       <div className="text-xs text-gray-500">{p.method.replace('_', ' ')} {p.transactionId ? `• Ref: ${p.transactionId}` : ''} • {p.collectedBy?.name}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-green-700">{fmt(p.amount)}</div>
+                      <div className={`font-bold ${p.isCancelled ? 'text-red-400 line-through' : 'text-green-700'}`}>{fmt(p.amount)}</div>
                       <div className="text-xs text-gray-400">{fmtDate(p.paidAt)}</div>
                     </div>
-                    <button onClick={() => downloadReceipt(p.id, p.receiptNumber)} className="btn-secondary text-xs py-1.5 px-2 flex-shrink-0">
-                      <Download className="w-3 h-3" />
-                    </button>
+                    {!p.isCancelled && (
+                      <button onClick={() => downloadReceipt(p.id, p.receiptNumber)} className="btn-secondary text-xs py-1.5 px-2 flex-shrink-0">
+                        <Download className="w-3 h-3" />
+                      </button>
+                    )}
+                    {isAdmin && !p.isCancelled && (
+                      <button onClick={() => setCancelPayment(p)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors flex-shrink-0" title="Cancel payment">
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 ))}
                 {!enrollment.payments?.length && <div className="text-center py-8 text-gray-400 text-sm">No payments recorded yet</div>}
@@ -464,6 +497,26 @@ export default function StudentDetailPage() {
       {showPayFull && (
         <PayFullModal open={showPayFull} onClose={() => setShowPayFull(false)} enrollment={enrollment} />
       )}
+      <ConfirmDialog
+        open={showDeleteEnrollment}
+        onClose={() => setShowDeleteEnrollment(false)}
+        onConfirm={() => deleteEnrollmentMutation.mutate()}
+        loading={deleteEnrollmentMutation.isPending}
+        danger
+        title={`Delete enrollment — ${enrollment.lead?.name}?`}
+        message={`This will remove the enrollment and reset the lead status to QUALIFIED.\n\nAll cancelled payments will be kept for records. Active payments must be cancelled first.`}
+        confirmLabel="Delete Enrollment"
+      />
+      <ConfirmDialog
+        open={!!cancelPayment}
+        onClose={() => setCancelPayment(null)}
+        onConfirm={() => cancelPaymentMutation.mutate({ paymentId: cancelPayment?.id, reason: 'Cancelled by admin' })}
+        loading={cancelPaymentMutation.isPending}
+        danger
+        title={`Cancel payment — ${cancelPayment?.receiptNumber}?`}
+        message={`Amount: ${fmt(cancelPayment?.amount)}\n\nThis will mark the payment as cancelled and reverse the student's balance. The payment record will be kept for audit purposes.`}
+        confirmLabel="Cancel Payment"
+      />
     </div>
   );
 }

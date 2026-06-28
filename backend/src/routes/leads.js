@@ -147,8 +147,35 @@ router.patch('/:id', async (req, res) => {
 
 router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
-    await prisma.lead.update({ where: { id: req.params.id }, data: { status: 'LOST' } });
-    res.json({ message: 'Lead archived' });
+    const lead = await prisma.lead.findUnique({
+      where: { id: req.params.id },
+      include: { enrollment: { select: { id: true } } },
+    });
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (lead.enrollment) return res.status(400).json({ error: 'Cannot delete enrolled student. Remove the enrollment first.' });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.activityLog.deleteMany({ where: { leadId: req.params.id } });
+      await tx.note.deleteMany({ where: { leadId: req.params.id } });
+      await tx.callLog.deleteMany({ where: { leadId: req.params.id } });
+      await tx.task.deleteMany({ where: { leadId: req.params.id } });
+      await tx.whatsAppMessage.deleteMany({ where: { leadId: req.params.id } });
+      await tx.aISession.deleteMany({ where: { leadId: req.params.id } });
+      await tx.lead.delete({ where: { id: req.params.id } });
+    });
+    res.json({ message: 'Lead permanently deleted' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/:id/notes/:noteId', async (req, res) => {
+  try {
+    const note = await prisma.note.findUnique({ where: { id: req.params.noteId } });
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+    if (note.leadId !== req.params.id) return res.status(400).json({ error: 'Note does not belong to this lead' });
+    const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(req.user.role);
+    if (note.authorId !== req.user.id && !isAdmin) return res.status(403).json({ error: 'You can only delete your own notes' });
+    await prisma.note.delete({ where: { id: req.params.noteId } });
+    res.json({ message: 'Note deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

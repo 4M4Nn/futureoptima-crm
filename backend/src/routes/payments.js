@@ -1,7 +1,7 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { prisma } from '../utils/prisma.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, authorize } from '../middleware/auth.js';
 import { generateReceiptPDF } from '../services/receiptService.js';
 import { logActivity } from '../utils/activityLogger.js';
 import fs from 'fs';
@@ -226,6 +226,44 @@ router.post('/:id/resend-receipt', async (req, res) => {
     });
 
     res.json({ message: 'Receipt PDF regenerated', path: pdfPath });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/:id/cancel', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const payment = await prisma.payment.findUnique({
+      where: { id: req.params.id },
+      include: { enrollment: { include: { lead: true, installments: true } }, installment: true },
+    });
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+    if (payment.isCancelled) return res.status(400).json({ error: 'Payment is already cancelled' });
+
+    const newPaid = Math.max(0, payment.enrollment.paidAmount - payment.amount);
+    const newBalance = payment.enrollment.netFee - newPaid;
+    const newStatus = newPaid <= 0 ? 'PENDING' : newBalance <= 0 ? 'PAID' : 'PARTIAL';
+
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: req.params.id },
+        data: { isCancelled: true, cancelledAt: new Date(), cancelReason: reason || 'Cancelled by admin' },
+      });
+      await tx.enrollment.update({
+        where: { id: payment.enrollmentId },
+        data: { paidAmount: newPaid, balanceDue: newBalance, paymentStatus: newStatus },
+      });
+      if (payment.installmentId) {
+        await tx.installment.update({
+          where: { id: payment.installmentId },
+          data: { status: 'DUE', paidAt: null },
+        });
+      }
+    });
+
+    await logActivity(payment.enrollment.leadId, req.user.id, 'PAYMENT_CANCELLED', {
+      receiptNumber: payment.receiptNumber, amount: payment.amount, reason,
+    });
+    res.json({ message: 'Payment cancelled. Student balance adjusted.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

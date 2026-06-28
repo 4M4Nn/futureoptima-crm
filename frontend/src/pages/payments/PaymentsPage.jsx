@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CreditCard, Plus, CheckCircle, RefreshCw, Download } from 'lucide-react';
+import { CreditCard, Plus, CheckCircle, RefreshCw, Download, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../../utils/api';
 import { fmt, fmtDatetime, PAYMENT_METHODS } from '../../utils/constants';
-import { StatCard, LoadingState, EmptyState, Pagination, Modal, Input, Select, StatusBadge } from '../../components/ui/index';
+import { StatCard, LoadingState, EmptyState, Pagination, Modal, Input, Select, StatusBadge, ConfirmDialog } from '../../components/ui/index';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 
 async function downloadReceipt(paymentId, receiptNumber) {
@@ -150,9 +151,19 @@ function AddPaymentModal({ open, onClose }) {
 export default function PaymentsPage() {
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
+  const [cancelPayment, setCancelPayment] = useState(null);
+  const { user } = useAuthStore();
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
+  const qc = useQueryClient();
 
   const { data: stats } = useQuery({ queryKey: ['payment-stats'], queryFn: () => api.get('/payments/stats').then(r => r.data) });
   const { data, isLoading } = useQuery({ queryKey: ['payments', page], queryFn: () => api.get(`/payments?page=${page}&limit=25`).then(r => r.data) });
+
+  const cancelPaymentMutation = useMutation({
+    mutationFn: (id) => api.patch(`/payments/${id}/cancel`, { reason: 'Cancelled by admin' }),
+    onSuccess: () => { toast.success('Payment cancelled'); qc.invalidateQueries(['payments']); qc.invalidateQueries(['payment-stats']); setCancelPayment(null); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Cancel failed'),
+  });
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -201,20 +212,32 @@ export default function PaymentsPage() {
               ) : !data?.data?.length ? (
                 <tr><td colSpan={7}><EmptyState title="No payments yet" description="Record your first payment" action={<button onClick={() => setShowAdd(true)} className="btn-primary mx-auto">Record Payment</button>} /></td></tr>
               ) : data.data.map((p, i) => (
-                <motion.tr key={p.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }} className="table-row">
-                  <td className="px-4 py-3 text-xs font-mono text-gray-700">{p.receiptNumber}</td>
+                <motion.tr key={p.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }} className={`table-row ${p.isCancelled ? 'opacity-50' : ''}`}>
+                  <td className="px-4 py-3 text-xs font-mono text-gray-700">
+                    {p.receiptNumber}
+                    {p.isCancelled && <span className="ml-1 text-red-500 text-xs">(cancelled)</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="text-sm font-medium text-gray-900">{p.enrollment?.lead?.name}</div>
                     <div className="text-xs text-gray-400">{p.enrollment?.lead?.phone}</div>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-600">{p.enrollment?.course?.shortName}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-green-700">{fmt(p.amount)}</td>
+                  <td className={`px-4 py-3 text-sm font-bold ${p.isCancelled ? 'text-red-400 line-through' : 'text-green-700'}`}>{fmt(p.amount)}</td>
                   <td className="px-4 py-3"><span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full">{p.method.replace('_', ' ')}</span></td>
                   <td className="px-4 py-3 text-xs text-gray-500">{fmtDatetime(p.paidAt)}</td>
                   <td className="px-4 py-3">
-                    <button onClick={() => downloadReceipt(p.id, p.receiptNumber)} className="text-xs text-green-600 hover:underline flex items-center gap-1">
-                      <Download className="w-3 h-3" />Receipt
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {!p.isCancelled && (
+                        <button onClick={() => downloadReceipt(p.id, p.receiptNumber)} className="text-xs text-green-600 hover:underline flex items-center gap-1">
+                          <Download className="w-3 h-3" />Receipt
+                        </button>
+                      )}
+                      {isAdmin && !p.isCancelled && (
+                        <button onClick={() => setCancelPayment(p)} className="p-1 text-gray-300 hover:text-red-500 transition-colors" title="Cancel payment">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </motion.tr>
               ))}
@@ -225,6 +248,16 @@ export default function PaymentsPage() {
       </div>
 
       <AddPaymentModal open={showAdd} onClose={() => setShowAdd(false)} />
+      <ConfirmDialog
+        open={!!cancelPayment}
+        onClose={() => setCancelPayment(null)}
+        onConfirm={() => cancelPaymentMutation.mutate(cancelPayment?.id)}
+        loading={cancelPaymentMutation.isPending}
+        danger
+        title={`Cancel payment — ${cancelPayment?.receiptNumber}?`}
+        message={`Amount: ${fmt(cancelPayment?.amount)}\nStudent: ${cancelPayment?.enrollment?.lead?.name}\n\nThe payment record will be kept for audit purposes. The student's balance will be reversed.`}
+        confirmLabel="Cancel Payment"
+      />
     </div>
   );
 }

@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Plus, Search, RefreshCw, Bot, Phone } from "lucide-react";
+import { Plus, Search, RefreshCw, Bot, Phone, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import api from "../../utils/api";
 import { COURSES, LEAD_STATUSES, LEAD_SOURCES, fmtDate } from "../../utils/constants";
-import { GradeBadge, StatusBadge, LoadingState, EmptyState, Pagination, Modal } from "../../components/ui/index";
+import { GradeBadge, StatusBadge, LoadingState, EmptyState, Pagination, Modal, ConfirmDialog } from "../../components/ui/index";
+import { useAuthStore } from "../../store/authStore";
 import toast from "react-hot-toast";
 
 const COURSE_OPTS = Object.entries(COURSES).map(([value, label]) => ({ value, label }));
@@ -100,7 +101,10 @@ export default function LeadsPage() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ status: "", course: "", grade: "", source: "" });
   const [showAdd, setShowAdd] = useState(false);
+  const [deleteLead, setDeleteLead] = useState(null);
   const qc = useQueryClient();
+  const { user } = useAuthStore();
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
 
   const params = new URLSearchParams({ page, limit: 25, ...(search ? { search } : {}), ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) });
   const { data, isLoading } = useQuery({ queryKey: ["leads", page, search, filters], queryFn: () => api.get("/leads?" + params).then(r => r.data), keepPreviousData: true });
@@ -110,6 +114,12 @@ export default function LeadsPage() {
     toast.success("AI scoring started!");
     setTimeout(() => qc.invalidateQueries(["leads"]), 3000);
   };
+
+  const deleteLeadMutation = useMutation({
+    mutationFn: (id) => api.delete(`/leads/${id}`),
+    onSuccess: () => { toast.success("Lead deleted"); qc.invalidateQueries(["leads"]); setDeleteLead(null); },
+    onError: (e) => toast.error(e?.response?.data?.error || "Delete failed"),
+  });
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -176,7 +186,14 @@ export default function LeadsPage() {
                   <td className="px-4 py-3"><GradeBadge grade={lead.aiGrade} score={lead.aiScore} /></td>
                   <td className="px-4 py-3 text-xs text-gray-500">{lead.nextFollowUpAt ? fmtDate(lead.nextFollowUpAt) : "-"}</td>
                   <td className="px-4 py-3">
-                    <Link to={"/leads/" + lead.id} className="text-xs text-primary-600 hover:underline font-medium">View</Link>
+                    <div className="flex items-center gap-2">
+                      <Link to={"/leads/" + lead.id} className="text-xs text-primary-600 hover:underline font-medium">View</Link>
+                      {isAdmin && (
+                        <button onClick={() => setDeleteLead(lead)} className="p-1 text-gray-300 hover:text-red-500 transition-colors" title="Delete lead">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </motion.tr>
               ))}
@@ -189,6 +206,16 @@ export default function LeadsPage() {
       </div>
 
       <AddLeadModal open={showAdd} onClose={() => setShowAdd(false)} />
+      <ConfirmDialog
+        open={!!deleteLead}
+        onClose={() => setDeleteLead(null)}
+        onConfirm={() => deleteLeadMutation.mutate(deleteLead?.id)}
+        loading={deleteLeadMutation.isPending}
+        danger
+        title={`Delete lead — ${deleteLead?.name}?`}
+        message={`Phone: ${deleteLead?.phone}\n\nThis will permanently delete the lead and all associated notes, tasks, and call logs. This cannot be undone.`}
+        confirmLabel="Delete Lead"
+      />
     </div>
   );
 }

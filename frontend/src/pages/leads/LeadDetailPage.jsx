@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Phone, Mail, MapPin, ArrowLeft, Bot, Send, MessageSquare, CheckSquare, Clock, Plus, Loader2, Sparkles, GraduationCap, CreditCard } from 'lucide-react';
+import { Phone, Mail, MapPin, ArrowLeft, Bot, Send, MessageSquare, CheckSquare, Clock, Plus, Loader2, Sparkles, GraduationCap, CreditCard, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import { COURSES, fmt, fmtDate, fmtDatetime, timeAgo } from '../../utils/constants';
-import { GradeBadge, StatusBadge, Modal, Textarea, LoadingState } from '../../components/ui/index';
+import { GradeBadge, StatusBadge, Modal, Textarea, LoadingState, ConfirmDialog } from '../../components/ui/index';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 
 function AIPanel({ lead, onScore }) {
@@ -254,9 +255,13 @@ export default function LeadDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuthStore();
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
   const [noteText, setNoteText] = useState('');
   const [showEnroll, setShowEnroll] = useState(false);
   const [tab, setTab] = useState('timeline');
+  const [showDeleteLead, setShowDeleteLead] = useState(false);
+  const [deleteNoteId, setDeleteNoteId] = useState(null);
 
   const { data: lead, isLoading } = useQuery({ queryKey: ['lead', id], queryFn: () => api.get(`/leads/${id}`).then(r => r.data) });
   const { data: courses } = useQuery({ queryKey: ['courses'], queryFn: () => api.get('/courses').then(r => r.data) });
@@ -264,6 +269,18 @@ export default function LeadDetailPage() {
   const addNote = useMutation({
     mutationFn: () => api.post(`/leads/${id}/notes`, { content: noteText }),
     onSuccess: () => { toast.success('Note added'); qc.invalidateQueries(['lead', id]); setNoteText(''); },
+  });
+
+  const deleteLeadMutation = useMutation({
+    mutationFn: () => api.delete(`/leads/${id}`),
+    onSuccess: () => { toast.success('Lead deleted'); navigate('/leads'); },
+    onError: (e) => { toast.error(e?.response?.data?.error || 'Delete failed'); setShowDeleteLead(false); },
+  });
+
+  const deleteNoteMutation = useMutation({
+    mutationFn: (noteId) => api.delete(`/leads/${id}/notes/${noteId}`),
+    onSuccess: () => { toast.success('Note deleted'); qc.invalidateQueries(['lead', id]); setDeleteNoteId(null); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Failed to delete note'),
   });
 
   const rescoreAI = useMutation({
@@ -320,6 +337,11 @@ export default function LeadDetailPage() {
                 <Link to={`/students/${lead.enrollment.id}`} className="btn-primary text-sm">
                   <CreditCard className="w-4 h-4" />View Enrollment
                 </Link>
+              )}
+              {isAdmin && !lead.enrollment && (
+                <button onClick={() => setShowDeleteLead(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 border border-red-200 rounded-xl transition-colors">
+                  <Trash2 className="w-4 h-4" />Delete
+                </button>
               )}
             </div>
           </div>
@@ -378,7 +400,14 @@ export default function LeadDetailPage() {
                           {item.type === 'note' ? '📝' : item.type === 'call' ? '📞' : '⚡'}
                         </div>
                         <div className="flex-1 bg-gray-50 rounded-xl p-3">
-                          <div className="text-sm text-gray-800">{item.content || item.outcome || item.action?.replace(/_/g, ' ')}</div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="text-sm text-gray-800 flex-1">{item.content || item.outcome || item.action?.replace(/_/g, ' ')}</div>
+                            {item.type === 'note' && (isAdmin || item.authorId === user?.id) && (
+                              <button onClick={() => setDeleteNoteId(item.id)} className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0 p-0.5">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                           <div className="text-xs text-gray-400 mt-1">{item.author?.name || item.calledBy?.name || 'System'} • {timeAgo(item.at)}</div>
                         </div>
                       </div>
@@ -447,6 +476,26 @@ export default function LeadDetailPage() {
         onClose={() => setShowEnroll(false)}
         leadId={lead.id}
         interestedCourse={lead.interestedCourse}
+      />
+      <ConfirmDialog
+        open={showDeleteLead}
+        onClose={() => setShowDeleteLead(false)}
+        onConfirm={() => deleteLeadMutation.mutate()}
+        loading={deleteLeadMutation.isPending}
+        danger
+        title={`Delete lead — ${lead.name}?`}
+        message={`Phone: ${lead.phone}\n\nThis will permanently delete the lead and all associated notes, tasks, and call logs. This cannot be undone.`}
+        confirmLabel="Delete Lead"
+      />
+      <ConfirmDialog
+        open={!!deleteNoteId}
+        onClose={() => setDeleteNoteId(null)}
+        onConfirm={() => deleteNoteMutation.mutate(deleteNoteId)}
+        loading={deleteNoteMutation.isPending}
+        danger
+        title="Delete note?"
+        message="This note will be permanently deleted."
+        confirmLabel="Delete Note"
       />
     </div>
   );

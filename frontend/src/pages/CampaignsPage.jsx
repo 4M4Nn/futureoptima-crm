@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Megaphone, Plus, Send, Bot, Loader2, Users } from 'lucide-react';
+import { Megaphone, Plus, Send, Bot, Loader2, Users, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
 import { fmtDate, COURSES } from '../utils/constants';
-import { Modal, Input, Select, LoadingState, EmptyState } from '../components/ui/index';
+import { Modal, Input, Select, LoadingState, EmptyState, ConfirmDialog } from '../components/ui/index';
+import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 
 const GRADE_OPTS = [
@@ -70,6 +71,9 @@ function CreateCampaignModal({ open, onClose }) {
 export default function CampaignsPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [deleteCampaign, setDeleteCampaign] = useState(null);
+  const { user } = useAuthStore();
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
 
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ['campaigns'],
@@ -80,6 +84,12 @@ export default function CampaignsPage() {
     mutationFn: (id) => api.post(`/campaigns/${id}/send`),
     onSuccess: () => toast.success('Campaign sending started! WhatsApp messages queued.'),
     onError: () => toast.error('Send failed'),
+  });
+
+  const deleteCampaignMutation = useMutation({
+    mutationFn: (id) => api.delete(`/campaigns/${id}`),
+    onSuccess: () => { toast.success('Campaign deleted'); qc.invalidateQueries(['campaigns']); setDeleteCampaign(null); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Delete failed'),
   });
 
   return (
@@ -148,11 +158,18 @@ export default function CampaignsPage() {
 
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-400">By {c.createdBy?.name} · {fmtDate(c.createdAt)}</span>
-                {!c.sentAt && (
-                  <button onClick={() => sendCampaign.mutate(c.id)} disabled={sendCampaign.isPending} className="btn-primary text-xs py-1.5 px-3">
-                    {sendCampaign.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Send className="w-3 h-3" />Send Now</>}
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {!c.sentAt && (
+                    <button onClick={() => sendCampaign.mutate(c.id)} disabled={sendCampaign.isPending} className="btn-primary text-xs py-1.5 px-3">
+                      {sendCampaign.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Send className="w-3 h-3" />Send Now</>}
+                    </button>
+                  )}
+                  {isAdmin && !c.sentAt && (
+                    <button onClick={() => setDeleteCampaign(c)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors" title="Delete campaign">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           ))}
@@ -160,6 +177,16 @@ export default function CampaignsPage() {
       )}
 
       <CreateCampaignModal open={showCreate} onClose={() => setShowCreate(false)} />
+      <ConfirmDialog
+        open={!!deleteCampaign}
+        onClose={() => setDeleteCampaign(null)}
+        onConfirm={() => deleteCampaignMutation.mutate(deleteCampaign?.id)}
+        loading={deleteCampaignMutation.isPending}
+        danger
+        title={`Delete campaign — ${deleteCampaign?.name}?`}
+        message={`This draft campaign will be permanently deleted. This cannot be undone.`}
+        confirmLabel="Delete Campaign"
+      />
     </div>
   );
 }

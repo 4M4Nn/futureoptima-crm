@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { UserPlus, Shield, Edit2, CheckCircle } from 'lucide-react';
+import { UserPlus, Shield, Edit2, CheckCircle, UserX } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
 import { fmtDate } from '../utils/constants';
-import { Modal, Input, Select, LoadingState, EmptyState } from '../components/ui/index';
+import { Modal, Input, Select, LoadingState, EmptyState, ConfirmDialog } from '../components/ui/index';
+import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 
 const ROLE_COLORS = {
@@ -48,6 +49,8 @@ export default function UsersPage() {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [editUser, setEditUser] = useState(null);
+  const [deactivateTarget, setDeactivateTarget] = useState(null);
+  const { user: currentUser } = useAuthStore();
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['users'],
@@ -57,6 +60,12 @@ export default function UsersPage() {
   const toggleActive = useMutation({
     mutationFn: ({ id, isActive }) => api.patch(`/users/${id}`, { isActive: !isActive }),
     onSuccess: () => { toast.success('User status updated'); qc.invalidateQueries(['users']); },
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: (id) => api.patch(`/users/${id}`, { isActive: false }),
+    onSuccess: () => { toast.success('User deactivated'); qc.invalidateQueries(['users']); setDeactivateTarget(null); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Failed to deactivate'),
   });
 
   return (
@@ -113,7 +122,12 @@ export default function UsersPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(user.createdAt)}</td>
                   <td className="px-4 py-3">
-                    <button onClick={() => setEditUser(user)} className="text-xs text-primary-600 hover:underline flex items-center gap-1"><Edit2 className="w-3 h-3" />Edit</button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setEditUser(user)} className="text-xs text-primary-600 hover:underline flex items-center gap-1"><Edit2 className="w-3 h-3" />Edit</button>
+                      {user.isActive && user.id !== currentUser?.id && (
+                        <button onClick={() => setDeactivateTarget(user)} className="text-xs text-red-500 hover:underline flex items-center gap-1"><UserX className="w-3 h-3" />Deactivate</button>
+                      )}
+                    </div>
                   </td>
                 </motion.tr>
               ))}
@@ -124,6 +138,16 @@ export default function UsersPage() {
 
       <UserModal open={showAdd} onClose={() => setShowAdd(false)} />
       {editUser && <UserModal open={!!editUser} onClose={() => setEditUser(null)} editUser={editUser} />}
+      <ConfirmDialog
+        open={!!deactivateTarget}
+        onClose={() => setDeactivateTarget(null)}
+        onConfirm={() => deactivateMutation.mutate(deactivateTarget?.id)}
+        loading={deactivateMutation.isPending}
+        danger
+        title={`Deactivate user — ${deactivateTarget?.name}?`}
+        message={`${deactivateTarget?.email}\nRole: ${deactivateTarget?.role}\n\nThey will lose access to the CRM immediately. You can reactivate them later from the status toggle.`}
+        confirmLabel="Deactivate User"
+      />
     </div>
   );
 }

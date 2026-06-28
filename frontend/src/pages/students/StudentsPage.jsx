@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { GraduationCap, Search, RefreshCw, Download } from 'lucide-react';
+import { GraduationCap, Search, RefreshCw, Download, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
-import { LoadingState, EmptyState, Pagination, StatusBadge } from '../../components/ui/index';
+import { LoadingState, EmptyState, Pagination, StatusBadge, ConfirmDialog } from '../../components/ui/index';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 
 async function downloadReceipt(paymentId, receiptNumber) {
@@ -59,6 +60,16 @@ export default function StudentsPage() {
   });
 
   const reset = () => { setSearch(''); setStatus(''); setPayStatus(''); setCourseId(''); setBatchId(''); setPage(1); };
+  const { user } = useAuthStore();
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
+  const [deleteEnrollment, setDeleteEnrollment] = useState(null);
+  const qc = useQueryClient();
+
+  const deleteEnrollmentMutation = useMutation({
+    mutationFn: (id) => api.delete(`/enrollments/${id}`),
+    onSuccess: () => { toast.success('Enrollment deleted'); qc.invalidateQueries(['enrollments']); setDeleteEnrollment(null); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Delete failed'),
+  });
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -134,6 +145,11 @@ export default function StudentsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Link to={`/students/${enr.id}`} className="text-xs text-primary-600 hover:underline font-medium">View</Link>
+                      {isAdmin && (
+                        <button onClick={() => setDeleteEnrollment(enr)} className="p-1 text-gray-300 hover:text-red-500 transition-colors" title="Delete enrollment">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </motion.tr>
@@ -143,6 +159,17 @@ export default function StudentsPage() {
         </div>
         {data?.pagination && <div className="px-4 pb-4"><Pagination page={data.pagination.page} pages={data.pagination.pages} total={data.pagination.total} onPage={setPage} /></div>}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteEnrollment}
+        onClose={() => setDeleteEnrollment(null)}
+        onConfirm={() => deleteEnrollmentMutation.mutate(deleteEnrollment?.id)}
+        loading={deleteEnrollmentMutation.isPending}
+        danger
+        title={`Delete enrollment — ${deleteEnrollment?.lead?.name}?`}
+        message={`This will remove the enrollment record and reset the lead status to QUALIFIED.\n\nPayment history (if any) will be kept. This cannot be undone.`}
+        confirmLabel="Delete Enrollment"
+      />
     </div>
   );
 }
