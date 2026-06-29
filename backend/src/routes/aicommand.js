@@ -1,6 +1,8 @@
 import express from 'express';
 import { prisma } from '../utils/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { logActivity } from '../utils/activityLogger.js';
+import { scoreLeadWithOllama } from '../services/ollamaService.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -118,8 +120,6 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
 
 const BANK_LABELS = { HDFC: 'HDFC Bank', ICICI: 'ICICI Bank', IDFC: 'IDFC Bank', CASH: 'Cash' };
 
-function fmtAmt(n) { return '₹' + (Number(n) || 0).toLocaleString('en-IN'); }
-
 // Execute read-only actions — no DB writes
 async function executeReadAction(action, data) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -202,84 +202,32 @@ async function executeReadAction(action, data) {
   }
 }
 
-// Resolve write action: look up IDs and build confirm text — NO DB writes
-async function resolveWriteAction(action, data) {
+// Execute write action — performs actual DB write and returns created record
+async function executeWriteAction(action, data, userId) {
   const bank = data.bankAccount || 'CASH';
 
   switch (action) {
-    case 'CREATE_LEAD': {
-      const followUpLabel = data.followUpDate ? ` · follow-up ${data.followUpDate}` : '';
-      const courseLabel = data.interestedCourse ? ` · ${data.interestedCourse.replace(/_/g, ' ')}` : '';
-      const sourceLabel = data.source ? ` · ${data.source.replace(/_/g, ' ')}` : '';
-      return {
-        resolvedData: data,
-        confirmText: `Add lead **${data.name}** (${data.phone})${courseLabel}${sourceLabel}${followUpLabel}?`,
-      };
-    }
-
-    case 'UPDATE_LEAD_STATUS': {
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
-      if (!lead) return { error: `No lead found with phone ${data.phone}` };
-      return {
-        resolvedData: { ...data, leadId: lead.id, leadName: lead.name },
-        confirmText: `Update **${lead.name}**'s status to **${data.status}**?`,
-      };
-    }
-
-    case 'SCHEDULE_FOLLOWUP': {
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
-      if (!lead) return { error: `No lead found with phone ${data.phone}` };
-      return {
-        resolvedData: { ...data, leadId: lead.id, leadName: lead.name },
-        confirmText: `Set follow-up for **${lead.name}** to **${data.date}**?`,
-      };
-    }
-
-    case 'ADD_NOTE': {
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
-      if (!lead) return { error: `No lead found with phone ${data.phone}` };
-      return {
-        resolvedData: { ...data, leadId: lead.id, leadName: lead.name },
-        confirmText: `Add note for **${lead.name}**: "${data.note}"?`,
-      };
-    }
-
-    case 'MARK_CALLED': {
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
-      if (!lead) return { error: `No lead found with phone ${data.phone}` };
-      const outcomeLabel = (data.outcome || '').replace(/_/g, ' ');
-      const notesLabel = data.notes ? ` · "${data.notes}"` : '';
-      return {
-        resolvedData: { ...data, leadId: lead.id, leadName: lead.name },
-        confirmText: `Log call with **${lead.name}** — outcome: **${outcomeLabel}**${notesLabel}?`,
-      };
-    }
-
-    case 'RECORD_PAYMENT': {
-      const amount = Number(data.amount);
-      if (!data.amount || amount <= 0) {
-        return { error: `How much is the payment? Include the amount — e.g. "record payment 5000 UPI HDFC for 9876543210"` };
-      }
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone }, include: { enrollment: true } });
-      if (!lead) return { error: `No lead found with phone ${data.phone}` };
-      if (!lead.enrollment) return { error: `${lead.name} has no active enrollment` };
-      const methodLabel = (data.method || 'CASH').replace(/_/g, ' ');
-      return {
-        resolvedData: { ...data, leadId: lead.id, leadName: lead.name, enrollmentId: lead.enrollment.id, balanceDue: lead.enrollment.balanceDue },
-        confirmText: `Record **${fmtAmt(amount)}** from **${lead.name}** via ${methodLabel} into **${BANK_LABELS[bank]}**? (Balance due: ${fmtAmt(lead.enrollment.balanceDue)})`,
-      };
-    }
-
     case 'ADD_EXPENSE': {
       const amount = Number(data.amount);
-      if (!data.amount || amount <= 0) {
-        return { error: `How much was this expense? Include the amount — e.g. "water expense 500 IDFC"` };
+      if (!amount || amount <= 0) {
+        return { error: 'How much was this expense? Include the amount — e.g. "water expense 500 IDFC"' };
       }
-      const dateLabel = data.date || new Date().toISOString().slice(0, 10);
-      const vendorLabel = data.vendor ? ` · ${data.vendor}` : '';
+      const expense = await prisma.expense.create({
+        data: {
+          category: data.category || 'Miscellaneous',
+          amount,
+          date: new Date(data.date || new Date().toISOString().slice(0, 10)),
+          paymentMethod: data.paymentMethod || 'Cash',
+          bankAccount: bank,
+          vendor: data.vendor || null,
+          notes: data.notes || null,
+          addedById: userId,
+        },
+        include: { addedBy: { select: { name: true } } },
+      });
       return {
-        resolvedData: { ...data, amount },
-        confirmText: `Add expense **${data.category || 'Miscellaneous'} ${fmtAmt(amount)}** · ${data.paymentMethod || 'Cash'} · **${BANK_LABELS[bank]}** · ${dateLabel}${vendorLabel}?`,
+        data: { expense },
+        message: `Added ${expense.category} expense ₹${expense.amount.toLocaleString('en-IN')}`,
       };
     }
 
@@ -295,36 +243,201 @@ async function resolveWriteAction(action, data) {
       if (matches.length > 1) return { error: `Found ${matches.length} matching expenses. Please be more specific (add amount or date).` };
 
       const exp = matches[0];
-      const dateStr = new Date(exp.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-      const vendorPart = exp.vendor ? ` (${exp.vendor})` : '';
+      await prisma.expense.delete({ where: { id: exp.id } });
       return {
-        resolvedData: { expenseId: exp.id, category: exp.category, amount: exp.amount, date: exp.date, vendor: exp.vendor },
-        confirmText: `⚠️ Permanently delete **${exp.category} ${fmtAmt(exp.amount)}**${vendorPart} · ${dateStr}? This cannot be undone.`,
-        isDangerous: true,
+        data: { deleted: true, category: exp.category, amount: exp.amount },
+        message: `Deleted ${exp.category} expense ₹${exp.amount.toLocaleString('en-IN')}`,
+      };
+    }
+
+    case 'CREATE_LEAD': {
+      if (!data.name || !data.phone) {
+        return { error: 'Lead name and phone number are required — e.g. "add lead Rahul Kumar 9876543210"' };
+      }
+      const existing = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (existing) {
+        return { data: { lead: existing, created: false }, message: `Lead with phone ${data.phone} already exists` };
+      }
+      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      const lead = await prisma.lead.create({
+        data: {
+          name: data.name,
+          phone: data.phone,
+          email: data.email || null,
+          source: data.source || 'OTHER',
+          interestedCourse: data.interestedCourse || null,
+          city: data.city || null,
+          nextFollowUpAt: data.followUpDate ? new Date(data.followUpDate) : tomorrow,
+        },
+      });
+      logActivity(lead.id, userId, 'LEAD_CREATED', { source: data.source }).catch(() => {});
+      scoreLeadWithOllama(lead.id).catch(() => {});
+      return {
+        data: { lead, created: true },
+        message: `Lead ${lead.name} (${lead.phone}) created`,
+      };
+    }
+
+    case 'UPDATE_LEAD_STATUS': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      const updated = await prisma.lead.update({
+        where: { id: lead.id },
+        data: { status: data.status },
+      });
+      logActivity(lead.id, userId, 'STATUS_UPDATED', { from: lead.status, to: data.status }).catch(() => {});
+      return {
+        data: updated,
+        message: `Updated ${updated.name}'s status to ${data.status}`,
+      };
+    }
+
+    case 'SCHEDULE_FOLLOWUP': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      const updated = await prisma.lead.update({
+        where: { id: lead.id },
+        data: { nextFollowUpAt: new Date(data.date) },
+      });
+      logActivity(lead.id, userId, 'FOLLOWUP_SCHEDULED', { nextFollowUpAt: data.date }).catch(() => {});
+      return {
+        data: updated,
+        message: `Follow-up scheduled for ${updated.name} on ${data.date}`,
+      };
+    }
+
+    case 'ADD_NOTE': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      if (!data.note) return { error: 'What is the note? Include the text — e.g. "add note for 9876543210: interested in Python course"' };
+      const note = await prisma.note.create({
+        data: {
+          leadId: lead.id,
+          authorId: userId,
+          content: data.note,
+          isPrivate: false,
+        },
+        include: { author: { select: { name: true } } },
+      });
+      return {
+        data: note,
+        message: `Note added for ${lead.name}`,
+      };
+    }
+
+    case 'MARK_CALLED': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      const call = await prisma.callLog.create({
+        data: {
+          leadId: lead.id,
+          calledById: userId,
+          outcome: data.outcome || 'NO_ANSWER',
+          notes: data.notes || null,
+        },
+      });
+      await prisma.lead.update({ where: { id: lead.id }, data: { lastContactAt: new Date() } });
+      logActivity(lead.id, userId, 'CALL_LOGGED', { outcome: data.outcome }).catch(() => {});
+      return {
+        data: call,
+        message: `Call logged for ${lead.name} — ${(data.outcome || 'NO_ANSWER').replace(/_/g, ' ')}`,
+      };
+    }
+
+    case 'RECORD_PAYMENT': {
+      const amount = Number(data.amount);
+      if (!amount || amount <= 0) {
+        return { error: 'How much is the payment? Include the amount — e.g. "payment 5000 UPI HDFC for 9876543210"' };
+      }
+      if (!data.phone) {
+        return { error: 'Which student? Include their phone number — e.g. "payment 5000 UPI for 9876543210"' };
+      }
+      const lead = await prisma.lead.findFirst({
+        where: { phone: data.phone },
+        include: { enrollment: true },
+      });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      if (!lead.enrollment) return { error: `${lead.name} has no active enrollment` };
+      if (amount > lead.enrollment.balanceDue + 1) {
+        return { error: `Amount ₹${amount.toLocaleString('en-IN')} exceeds balance due ₹${lead.enrollment.balanceDue.toLocaleString('en-IN')}` };
+      }
+
+      const receiptNumber = `FO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+      const newPaid = lead.enrollment.paidAmount + amount;
+      const newBalance = lead.enrollment.netFee - newPaid;
+
+      const payment = await prisma.$transaction(async (tx) => {
+        const p = await tx.payment.create({
+          data: {
+            enrollmentId: lead.enrollment.id,
+            amount,
+            method: (data.method || 'CASH').toUpperCase().replace(/[\s-]/g, '_'),
+            transactionId: data.transactionId || null,
+            receiptNumber,
+            bankAccount: bank,
+            collectedById: userId,
+          },
+        });
+        await tx.enrollment.update({
+          where: { id: lead.enrollment.id },
+          data: {
+            paidAmount: newPaid,
+            balanceDue: newBalance,
+            paymentStatus: newBalance <= 0 ? 'PAID' : 'PARTIAL',
+          },
+        });
+        return p;
+      });
+
+      logActivity(lead.id, userId, 'PAYMENT_RECORDED', { amount, receiptNumber }).catch(() => {});
+      return {
+        data: { ...payment, leadName: lead.name, bankAccount: bank, balanceRemaining: newBalance },
+        message: `Payment ₹${amount.toLocaleString('en-IN')} recorded for ${lead.name}. Receipt: ${receiptNumber}`,
       };
     }
 
     case 'ADD_SALARY': {
       const basicSalary = Number(data.basicSalary);
-      if (!data.basicSalary || basicSalary <= 0) {
-        return { error: `What is the basic salary amount? Include it — e.g. "add salary for Aman 25000 HDFC June 2026"` };
+      if (!basicSalary || basicSalary <= 0) {
+        return { error: 'What is the salary amount? Include it — e.g. "add salary for Aman 25000 HDFC June 2026"' };
       }
-      const net = basicSalary + (parseFloat(data.bonus) || 0) - (parseFloat(data.deductions) || 0);
-      const bonusLabel = data.bonus && Number(data.bonus) > 0 ? ` + bonus ${fmtAmt(data.bonus)}` : '';
-      const deductLabel = data.deductions && Number(data.deductions) > 0 ? ` - deductions ${fmtAmt(data.deductions)}` : '';
-      const monthName = MONTH_NAMES[(data.month || 1) - 1];
+      if (!data.employeeName) {
+        return { error: 'Who is this salary for? Include the name — e.g. "salary for Rahul 25000 HDFC June 2026"' };
+      }
+      const bonus = Number(data.bonus) || 0;
+      const deductions = Number(data.deductions) || 0;
+      const netSalary = basicSalary + bonus - deductions;
+      const month = Number(data.month) || (new Date().getMonth() + 1);
+      const year = Number(data.year) || new Date().getFullYear();
+
+      const record = await prisma.salaryRecord.create({
+        data: {
+          employeeName: data.employeeName,
+          isExternalEmployee: true,
+          month,
+          year,
+          basicSalary,
+          bonus,
+          deductions,
+          netSalary,
+          paymentStatus: 'PENDING',
+          paymentMethod: data.paymentMethod || null,
+          bankAccount: bank,
+          notes: data.notes || null,
+        },
+      });
       return {
-        resolvedData: { ...data, basicSalary },
-        confirmText: `Add salary for **${data.employeeName}** — basic ${fmtAmt(basicSalary)}${bonusLabel}${deductLabel} = **net ${fmtAmt(net)}** · ${monthName} ${data.year} · paid from **${BANK_LABELS[bank]}**?`,
+        data: { salary: record },
+        message: `Salary record added for ${record.employeeName} — net ₹${netSalary.toLocaleString('en-IN')}`,
       };
     }
 
     default:
-      return { resolvedData: data, confirmText: 'Confirm this action?' };
+      return { error: `Unknown write action: ${action}` };
   }
 }
 
-// POST /api/aicommand/execute — parse intent and resolve IDs, never write to DB
+// POST /api/aicommand/execute — parse intent and persist to DB in one step
 router.post('/execute', async (req, res) => {
   const { command } = req.body;
   if (!command?.trim()) return res.status(400).json({ error: 'Command required' });
@@ -345,19 +458,17 @@ router.post('/execute', async (req, res) => {
       return res.json({ action: 'UNKNOWN', data: {}, message: parsed.message || "I didn't understand that. Try: 'Add lead Rahul 9876543210' or 'Electricity expense 500 HDFC'", requiresConfirmation: false });
     }
 
-    const resolved = await resolveWriteAction(parsed.action, parsed.data || {});
+    const result = await executeWriteAction(parsed.action, parsed.data || {}, req.user.id);
 
-    if (resolved.error) {
-      return res.json({ action: parsed.action, data: {}, message: resolved.error, requiresConfirmation: false, isError: true });
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
     }
 
     return res.json({
       action: parsed.action,
-      data: resolved.resolvedData,
-      message: parsed.message,
-      confirmText: resolved.confirmText,
-      requiresConfirmation: true,
-      isDangerous: resolved.isDangerous || false,
+      data: result.data,
+      message: result.message,
+      requiresConfirmation: false,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

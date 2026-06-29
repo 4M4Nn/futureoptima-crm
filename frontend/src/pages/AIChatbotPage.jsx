@@ -353,6 +353,20 @@ export default function AIChatbotPage() {
         setPendingAction({ action: res.action, data: res.data });
       } else {
         addMsg({ role: 'ai', type: 'result', action: res.action, data: res.data, message: res.message, isError: res.isError });
+        if (!res.isError) {
+          if (['ADD_EXPENSE', 'DELETE_EXPENSE'].includes(res.action)) {
+            qc.invalidateQueries({ queryKey: ['expenses'] });
+            qc.invalidateQueries({ queryKey: ['finance-dashboard'] });
+          } else if (['CREATE_LEAD', 'UPDATE_LEAD_STATUS', 'SCHEDULE_FOLLOWUP', 'ADD_NOTE', 'MARK_CALLED'].includes(res.action)) {
+            qc.invalidateQueries({ queryKey: ['leads'] });
+          } else if (res.action === 'RECORD_PAYMENT') {
+            qc.invalidateQueries({ queryKey: ['payments'] });
+            qc.invalidateQueries({ queryKey: ['payment-stats'] });
+            qc.invalidateQueries({ queryKey: ['enrollments'] });
+          } else if (res.action === 'ADD_SALARY') {
+            qc.invalidateQueries({ queryKey: ['salary-records'] });
+          }
+        }
       }
     } catch (err) {
       addMsg({ role: 'ai', error: err?.error || err?.message || 'Command failed. Please try again.' });
