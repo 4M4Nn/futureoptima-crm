@@ -23,7 +23,7 @@ function AddLeadModal({ open, onClose }) {
   const [source, setSource] = useState("WALK_IN");
   const [interestedCourse, setInterestedCourse] = useState("");
   const [budget, setBudget] = useState("");
-  const [expectedJoinDate, setExpectedJoinDate] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
 
   const mutation = useMutation({
     mutationFn: (data) => api.post("/leads", data).then(r => r.data),
@@ -31,7 +31,7 @@ function AddLeadModal({ open, onClose }) {
       toast.success("Lead added! AI scoring in progress...");
       qc.invalidateQueries(["leads"]);
       onClose();
-      setName(""); setPhone(""); setEmail(""); setCity(""); setSource("WALK_IN"); setInterestedCourse(""); setBudget(""); setExpectedJoinDate("");
+      setName(""); setPhone(""); setEmail(""); setCity(""); setSource("WALK_IN"); setInterestedCourse(""); setBudget(""); setFollowUpDate("");
     },
     onError: (e) => {
       console.log("Error:", e);
@@ -42,7 +42,8 @@ function AddLeadModal({ open, onClose }) {
   const handleSubmit = () => {
     if (!name.trim()) return toast.error("Name is required");
     if (!phone.trim()) return toast.error("Phone is required");
-    mutation.mutate({ name: name.trim(), phone: phone.trim(), email: email.trim() || undefined, city: city.trim() || undefined, source: source || "OTHER", interestedCourse: interestedCourse || undefined, status: "NEW", budget: budget ? Number(budget) : undefined, expectedJoinDate: expectedJoinDate ? new Date(expectedJoinDate).toISOString() : undefined });
+    if (!followUpDate) return toast.error("Follow-up date is required");
+    mutation.mutate({ name: name.trim(), phone: phone.trim(), email: email.trim() || undefined, city: city.trim() || undefined, source: source || "OTHER", interestedCourse: interestedCourse || undefined, status: "NEW", budget: budget ? Number(budget) : undefined, nextFollowUpAt: new Date(followUpDate).toISOString() });
   };
 
   return (
@@ -82,8 +83,8 @@ function AddLeadModal({ open, onClose }) {
           <input className="input" type="number" value={budget} onChange={e => setBudget(e.target.value)} placeholder="50000" min="0" />
         </div>
         <div>
-          <label className="label">Expected Join Date</label>
-          <input className="input" type="date" value={expectedJoinDate} onChange={e => setExpectedJoinDate(e.target.value)} />
+          <label className="label">Follow-up Date *</label>
+          <input className="input" type="date" value={followUpDate} onChange={e => setFollowUpDate(e.target.value)} required />
         </div>
         <div className="col-span-2 flex justify-end gap-3 pt-2">
           <button className="btn-secondary" onClick={onClose}>Cancel</button>

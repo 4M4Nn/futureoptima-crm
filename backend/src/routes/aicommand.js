@@ -11,7 +11,7 @@ const SYSTEM_PROMPT = `You are an AI assistant for Future Optima IT Solutions CR
 Convert natural language commands to JSON actions. Respond ONLY with valid JSON. No markdown, no explanation.
 
 Supported actions:
-CREATE_LEAD: data: { name, phone, email?, source, interestedCourse?, city? }
+CREATE_LEAD: data: { name, phone, email?, source, interestedCourse?, city?, followUpDate? (ISO date, defaults to tomorrow if not mentioned) }
 UPDATE_LEAD_STATUS: data: { phone, status }
 SCHEDULE_FOLLOWUP: data: { phone, date (ISO), notes? }
 ADD_NOTE: data: { phone, note }
@@ -105,6 +105,7 @@ async function executeAction(action, data, userId) {
     case 'CREATE_LEAD': {
       const existing = await prisma.lead.findFirst({ where: { phone: data.phone } });
       if (existing) return { lead: existing, created: false, message: 'Lead already exists' };
+      const followUpAt = data.followUpDate ? new Date(data.followUpDate) : tomorrow;
       const lead = await prisma.lead.create({
         data: {
           name: data.name,
@@ -114,6 +115,7 @@ async function executeAction(action, data, userId) {
           interestedCourse: data.interestedCourse,
           city: data.city,
           assignedToId: userId,
+          nextFollowUpAt: followUpAt,
         },
       });
       // Background AI scoring
