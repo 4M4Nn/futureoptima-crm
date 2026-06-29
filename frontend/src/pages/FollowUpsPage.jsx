@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { PhoneCall, Calendar, CheckCircle, Clock, AlertTriangle, ExternalLink } from 'lucide-react';
+import { PhoneCall, Calendar, CheckCircle, AlertTriangle, ExternalLink } from 'lucide-react';
 import api from '../utils/api';
 import { STATUS_COLORS } from '../utils/constants';
 import { GradeBadge, LoadingState } from '../components/ui/index';
@@ -78,8 +78,8 @@ function LeadCard({ lead, period, expanded, onToggle, formState, onFormChange, o
 
   const courseColor = COURSE_COLORS[lead.interestedCourse] || 'bg-gray-100 text-gray-700';
   const days = isOverdue && lead.nextFollowUpAt ? daysOverdue(lead.nextFollowUpAt) : 0;
-  const callTime = !isOverdue && lead.nextFollowUpAt
-    ? new Date(lead.nextFollowUpAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+  const followUpDateLabel = lead.nextFollowUpAt
+    ? new Date(lead.nextFollowUpAt).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
     : null;
 
   const presetShort = [['Today', 'today'], ['Tomorrow', 'tomorrow'], ['+3d', '3days'], ['+1w', 'week']];
@@ -116,9 +116,9 @@ function LeadCard({ lead, period, expanded, onToggle, formState, onFormChange, o
                   <AlertTriangle className="w-3 h-3" /> {days}d overdue
                 </span>
               )}
-              {callTime && (
-                <span className="text-xs text-gray-400 flex items-center gap-0.5">
-                  <Clock className="w-3 h-3" /> {callTime}
+              {followUpDateLabel && (
+                <span className="text-xs text-gray-500 flex items-center gap-0.5">
+                  <Calendar className="w-3 h-3" /> {followUpDateLabel}
                 </span>
               )}
             </div>
