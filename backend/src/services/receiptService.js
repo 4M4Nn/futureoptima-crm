@@ -22,8 +22,10 @@ function numToWords(n) {
   return h(Math.floor(n));
 }
 
+const BANK_LABELS = { HDFC: 'HDFC Bank', ICICI: 'ICICI Bank', IDFC: 'IDFC Bank', CASH: 'Cash' };
+
 export async function generateReceiptPDF(data) {
-  const { receiptNumber, studentName, phone, courseName, amount, method, transactionId, paidAt, netFee, paidTotal, balance, collectedBy } = data;
+  const { receiptNumber, studentName, phone, courseName, amount, method, transactionId, paidAt, netFee, paidTotal, balance, collectedBy, bankAccount } = data;
   const filename = `receipt_${receiptNumber.replace(/[^a-z0-9]/gi, '_')}.pdf`;
   const filePath = path.join(receiptsDir, filename);
 
@@ -85,6 +87,7 @@ export async function generateReceiptPDF(data) {
     if (transactionId) { doc.font('Helvetica-Bold').text('Ref:', col2, y).font('Helvetica').text(transactionId, col2 + 25, y); }
     y += 14;
     doc.font('Helvetica-Bold').text('Received By:', col1, y).font('Helvetica').text(collectedBy, col1 + 75, y);
+    doc.font('Helvetica-Bold').text('Account:', col2, y).font('Helvetica').text(BANK_LABELS[bankAccount] || 'Cash', col2 + 48, y);
 
     // QR
     doc.image(qrBuf, doc.page.width - 85, y - 45, { width: 55 });

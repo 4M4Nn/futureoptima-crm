@@ -22,7 +22,7 @@ router.post('/', [
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
-    const { enrollmentId, amount, method, transactionId, installmentId, remarks } = req.body;
+    const { enrollmentId, amount, method, transactionId, installmentId, remarks, bankAccount } = req.body;
     const enrollment = await prisma.enrollment.findUnique({
       where: { id: enrollmentId },
       include: { lead: true, course: true },
@@ -46,6 +46,7 @@ router.post('/', [
           transactionId,
           receiptNumber,
           remarks,
+          bankAccount: bankAccount || 'CASH',
           collectedById: req.user.id,
         },
       });
@@ -79,6 +80,7 @@ router.post('/', [
       paidTotal: newPaid,
       balance: newBalance,
       collectedBy: req.user.name,
+      bankAccount: bankAccount || 'CASH',
     }).catch(console.error);
 
     res.status(201).json({ ...result, message: 'Payment recorded successfully!' });
@@ -92,7 +94,7 @@ router.post('/full-settlement', [
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
-    const { enrollmentId, method, transactionId } = req.body;
+    const { enrollmentId, method, transactionId, bankAccount } = req.body;
     const enrollment = await prisma.enrollment.findUnique({
       where: { id: enrollmentId },
       include: { lead: true, course: true, installments: { where: { status: { not: 'PAID' } } } },
@@ -105,7 +107,7 @@ router.post('/full-settlement', [
 
     const result = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
-        data: { enrollmentId, amount, method, transactionId: transactionId || null, receiptNumber, remarks: 'Full Settlement', collectedById: req.user.id },
+        data: { enrollmentId, amount, method, transactionId: transactionId || null, receiptNumber, remarks: 'Full Settlement', bankAccount: bankAccount || 'CASH', collectedById: req.user.id },
       });
       await tx.enrollment.update({
         where: { id: enrollmentId },
@@ -135,6 +137,7 @@ router.post('/full-settlement', [
       paidTotal: enrollment.netFee,
       balance: 0,
       collectedBy: req.user.name,
+      bankAccount: bankAccount || 'CASH',
     }).catch(console.error);
 
     res.status(201).json({ ...result, message: 'Full settlement complete! All installments cleared.' });

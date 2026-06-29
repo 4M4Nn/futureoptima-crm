@@ -119,6 +119,13 @@ enum AILeadGrade {
   UNQUALIFIED
 }
 
+enum BankAccount {
+  HDFC
+  ICICI
+  IDFC
+  CASH
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -289,6 +296,7 @@ model Payment {
   isCancelled    Boolean       @default(false)
   cancelledAt    DateTime?
   cancelReason   String?
+  bankAccount    BankAccount   @default(CASH)
   createdAt      DateTime      @default(now())
 
   @@index([enrollmentId])
@@ -457,9 +465,10 @@ model Expense {
   vendor        String?
   notes         String?
   addedById     String
-  addedBy       User     @relation(fields: [addedById], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  addedBy       User        @relation(fields: [addedById], references: [id])
+  bankAccount   BankAccount @default(CASH)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
 
 model SalaryRecord {
@@ -477,11 +486,12 @@ model SalaryRecord {
   deductions         Float     @default(0)
   netSalary          Float
   paymentDate        DateTime?
-  paymentStatus      String    @default("PENDING")
+  paymentStatus      String      @default("PENDING")
   paymentMethod      String?
+  bankAccount        BankAccount @default(CASH)
   notes              String?
-  slipGenerated      Boolean   @default(false)
-  createdAt          DateTime  @default(now())
+  slipGenerated      Boolean     @default(false)
+  createdAt          DateTime    @default(now())
 }
 
 model Certificate {

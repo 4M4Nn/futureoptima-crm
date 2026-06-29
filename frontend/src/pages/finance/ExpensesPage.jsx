@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Plus, Receipt, Filter } from 'lucide-react';
+import { Plus, Receipt, Filter, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
-import { Modal, LoadingState, EmptyState, StatCard } from '../../components/ui/index';
+import { Modal, LoadingState, EmptyState, StatCard, ConfirmDialog } from '../../components/ui/index';
 
 const CATEGORIES = ['Salary', 'Marketing', 'Rent', 'Electricity', 'Internet', 'Software', 'Office', 'Travel', 'Miscellaneous'];
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
+const BANK_ACCOUNTS = [{ value: 'HDFC', label: 'HDFC Bank' }, { value: 'ICICI', label: 'ICICI Bank' }, { value: 'IDFC', label: 'IDFC Bank' }, { value: 'CASH', label: 'Cash' }];
 
 const CAT_COLORS = {
   Salary: 'bg-blue-100 text-blue-700',
@@ -29,10 +30,11 @@ const DEFAULT_TO = now.toISOString().slice(0, 10);
 export default function ExpensesPage() {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
+  const [deleteExpense, setDeleteExpense] = useState(null);
   const [from, setFrom] = useState(DEFAULT_FROM);
   const [to, setTo] = useState(DEFAULT_TO);
   const [filterCat, setFilterCat] = useState('');
-  const [form, setForm] = useState({ category: '', amount: '', date: DEFAULT_TO, paymentMethod: '', vendor: '', notes: '' });
+  const [form, setForm] = useState({ category: '', amount: '', date: DEFAULT_TO, paymentMethod: '', bankAccount: 'CASH', vendor: '', notes: '' });
 
   const { data, isLoading } = useQuery({
     queryKey: ['expenses', from, to, filterCat],
@@ -46,14 +48,25 @@ export default function ExpensesPage() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['finance-dashboard'] });
       setShowModal(false);
-      setForm({ category: '', amount: '', date: DEFAULT_TO, paymentMethod: '', vendor: '', notes: '' });
+      setForm({ category: '', amount: '', date: DEFAULT_TO, paymentMethod: '', bankAccount: 'CASH', vendor: '', notes: '' });
     },
     onError: (err) => toast.error(err?.error || 'Failed to add expense'),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/finance/expenses/${id}`),
+    onSuccess: () => {
+      toast.success('Expense deleted');
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['finance-dashboard'] });
+      setDeleteExpense(null);
+    },
+    onError: (err) => toast.error(err?.response?.data?.error || 'Delete failed'),
+  });
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.category || !form.amount || !form.date || !form.paymentMethod) {
+    if (!form.category || !form.amount || !form.date || !form.paymentMethod || !form.bankAccount) {
       toast.error('Fill all required fields'); return;
     }
     addMutation.mutate({ ...form, amount: parseFloat(form.amount) });
@@ -132,7 +145,7 @@ export default function ExpensesPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    {['Date', 'Category', 'Vendor', 'Amount', 'Method', 'Added By', 'Notes'].map(h => (
+                    {['Date', 'Category', 'Vendor', 'Amount', 'Method', 'Account', 'Added By', 'Notes', ''].map(h => (
                       <th key={h} className="text-left text-xs font-medium text-gray-500 px-4 py-3">{h}</th>
                     ))}
                   </tr>
@@ -149,8 +162,14 @@ export default function ExpensesPage() {
                       <td className="px-4 py-3 text-gray-700">{exp.vendor || '—'}</td>
                       <td className="px-4 py-3 font-semibold text-red-600">{fmt(exp.amount)}</td>
                       <td className="px-4 py-3 text-gray-500">{exp.paymentMethod}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{BANK_ACCOUNTS.find(b => b.value === exp.bankAccount)?.label || exp.bankAccount || '—'}</td>
                       <td className="px-4 py-3 text-gray-500">{exp.addedBy?.name}</td>
                       <td className="px-4 py-3 text-gray-400 max-w-[140px] truncate">{exp.notes || '—'}</td>
+                      <td className="px-4 py-3">
+                        <button onClick={() => setDeleteExpense(exp)} className="p-1 text-gray-300 hover:text-red-500 transition-colors" title="Delete expense">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </motion.tr>
                   ))}
                 </tbody>
@@ -159,6 +178,17 @@ export default function ExpensesPage() {
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteExpense}
+        onClose={() => setDeleteExpense(null)}
+        onConfirm={() => deleteMutation.mutate(deleteExpense?.id)}
+        loading={deleteMutation.isPending}
+        danger
+        title={`Delete expense?`}
+        message={`${deleteExpense?.category} — ${deleteExpense?.amount ? '₹' + deleteExpense.amount.toLocaleString('en-IN') : ''}\n\nThis will permanently remove the record. This cannot be undone.`}
+        confirmLabel="Delete"
+      />
 
       {/* Add Expense Modal */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Add Expense" size="md">
@@ -188,6 +218,12 @@ export default function ExpensesPage() {
                 {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
+          </div>
+          <div>
+            <label className="label">Account *</label>
+            <select value={form.bankAccount} onChange={e => setForm(f => ({ ...f, bankAccount: e.target.value }))} className="input" required>
+              {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+            </select>
           </div>
           <div>
             <label className="label">Vendor Name</label>

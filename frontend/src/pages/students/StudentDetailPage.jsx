@@ -25,9 +25,11 @@ async function downloadReceipt(paymentId, receiptNumber) {
   }
 }
 
+const BANK_ACCOUNTS = [{ value: 'HDFC', label: 'HDFC Bank' }, { value: 'ICICI', label: 'ICICI Bank' }, { value: 'IDFC', label: 'IDFC Bank' }, { value: 'CASH', label: 'Cash' }];
+
 function PayInstallmentModal({ open, onClose, installment, enrollmentId }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ amount: installment?.amount || '', method: 'UPI', transactionId: '' });
+  const [form, setForm] = useState({ amount: installment?.amount || '', method: 'UPI', transactionId: '', bankAccount: 'CASH' });
   const [lastPayment, setLastPayment] = useState(null);
 
   const mutation = useMutation({
@@ -69,6 +71,12 @@ function PayInstallmentModal({ open, onClose, installment, enrollmentId }) {
             <Input label="Amount (₹)" type="number" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} />
             <Select label="Payment Method" value={form.method} onChange={v => setForm(p => ({ ...p, method: v }))} options={OPTS} />
             <Input label="Transaction / Ref ID" value={form.transactionId} onChange={e => setForm(p => ({ ...p, transactionId: e.target.value }))} placeholder="UPI ref / cheque no" />
+            <div>
+              <label className="label">Received Into (Account)</label>
+              <select className="input" value={form.bankAccount} onChange={e => setForm(p => ({ ...p, bankAccount: e.target.value }))}>
+                {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+              </select>
+            </div>
             <div className="flex justify-end gap-3">
               <button className="btn-secondary" onClick={handleClose}>Cancel</button>
               <button className="btn-gold" onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>
@@ -86,13 +94,14 @@ function PayFullModal({ open, onClose, enrollment }) {
   const qc = useQueryClient();
   const [method, setMethod] = useState('UPI');
   const [transactionId, setTransactionId] = useState('');
+  const [bankAccount, setBankAccount] = useState('CASH');
   const [done, setDone] = useState(null);
 
   const pendingCount = enrollment?.installments?.filter(i => i.status !== 'PAID').length || 0;
   const OPTS = ['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'CARD'].map(m => ({ value: m, label: m.replace('_', ' ') }));
 
   const mutation = useMutation({
-    mutationFn: () => api.post('/payments/full-settlement', { enrollmentId: enrollment.id, method, transactionId }).then(r => r.data),
+    mutationFn: () => api.post('/payments/full-settlement', { enrollmentId: enrollment.id, method, transactionId, bankAccount }).then(r => r.data),
     onSuccess: (data) => {
       toast.success('Full settlement complete!');
       qc.invalidateQueries(['enrollment', enrollment.id]);
@@ -101,7 +110,7 @@ function PayFullModal({ open, onClose, enrollment }) {
     onError: (e) => toast.error(e?.response?.data?.error || e?.message || 'Settlement failed'),
   });
 
-  const handleClose = () => { setDone(null); setMethod('UPI'); setTransactionId(''); onClose(); };
+  const handleClose = () => { setDone(null); setMethod('UPI'); setTransactionId(''); setBankAccount('CASH'); onClose(); };
 
   return (
     <Modal open={open} onClose={handleClose} title="Pay Full Settlement" size="md">
@@ -133,6 +142,12 @@ function PayFullModal({ open, onClose, enrollment }) {
             </div>
             <Select label="Payment Method" value={method} onChange={setMethod} options={OPTS} />
             <Input label="Transaction / Ref ID (optional)" value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="UPI ref / cheque no / bank ref" />
+            <div>
+              <label className="label">Received Into (Account)</label>
+              <select className="input" value={bankAccount} onChange={e => setBankAccount(e.target.value)}>
+                {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+              </select>
+            </div>
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-xs text-yellow-800">
               ⚠️ This will mark all pending installments as PAID and update enrollment status to PAID.
             </div>

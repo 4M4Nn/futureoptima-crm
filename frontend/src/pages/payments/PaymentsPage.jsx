@@ -26,7 +26,8 @@ async function downloadReceipt(paymentId, receiptNumber) {
 
 function AddPaymentModal({ open, onClose }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ enrollmentId: '', amount: '', method: 'UPI', transactionId: '', remarks: '', installmentId: '' });
+  const BANK_ACCOUNTS = [{ value: 'HDFC', label: 'HDFC Bank' }, { value: 'ICICI', label: 'ICICI Bank' }, { value: 'IDFC', label: 'IDFC Bank' }, { value: 'CASH', label: 'Cash' }];
+  const [form, setForm] = useState({ enrollmentId: '', amount: '', method: 'UPI', transactionId: '', remarks: '', installmentId: '', bankAccount: 'CASH' });
   const [searchPhone, setSearchPhone] = useState('');
   const [enrollment, setEnrollment] = useState(null);
   const [searching, setSearching] = useState(false);
@@ -66,7 +67,7 @@ function AddPaymentModal({ open, onClose }) {
     setEnrollment(null);
     setSearchPhone('');
     setLastPayment(null);
-    setForm({ enrollmentId: '', amount: '', method: 'UPI', transactionId: '', remarks: '', installmentId: '' });
+    setForm({ enrollmentId: '', amount: '', method: 'UPI', transactionId: '', remarks: '', installmentId: '', bankAccount: 'CASH' });
     onClose();
   };
 
@@ -133,6 +134,12 @@ function AddPaymentModal({ open, onClose }) {
               <Select label="Payment Method *" value={form.method} onChange={v => setForm(p => ({ ...p, method: v }))} options={METHOD_OPTS} />
               <Input label="Transaction / Ref ID" value={form.transactionId} onChange={e => setForm(p => ({ ...p, transactionId: e.target.value }))} placeholder="UPI ref / cheque no" />
               <Input label="Remarks" value={form.remarks} onChange={e => setForm(p => ({ ...p, remarks: e.target.value }))} placeholder="Optional" />
+            </div>
+            <div>
+              <label className="label">Received Into (Account) *</label>
+              <select className="input" value={form.bankAccount} onChange={e => setForm(p => ({ ...p, bankAccount: e.target.value }))}>
+                {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+              </select>
             </div>
 
             <div className="flex justify-end gap-3 pt-2">

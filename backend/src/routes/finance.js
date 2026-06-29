@@ -113,12 +113,22 @@ router.post('/expenses', [
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
-    const { category, amount, date, paymentMethod, vendor, notes } = req.body;
+    const { category, amount, date, paymentMethod, vendor, notes, bankAccount } = req.body;
     const expense = await prisma.expense.create({
-      data: { category, amount: parseFloat(amount), date: new Date(date), paymentMethod, vendor, notes, addedById: req.user.id },
+      data: { category, amount: parseFloat(amount), date: new Date(date), paymentMethod, vendor, notes, bankAccount: bankAccount || 'CASH', addedById: req.user.id },
       include: { addedBy: { select: { name: true } } },
     });
     res.status(201).json(expense);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/finance/expenses/:id
+router.delete('/expenses/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
+  try {
+    const expense = await prisma.expense.findUnique({ where: { id: req.params.id } });
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    await prisma.expense.delete({ where: { id: req.params.id } });
+    res.json({ message: 'Expense deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -158,7 +168,7 @@ router.post('/salary', [
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
-    const { userId, employeeName, designation, department, isExternalEmployee, month, year, basicSalary, bonus = 0, deductions = 0, paymentStatus, paymentDate, paymentMethod, notes } = req.body;
+    const { userId, employeeName, designation, department, isExternalEmployee, month, year, basicSalary, bonus = 0, deductions = 0, paymentStatus, paymentDate, paymentMethod, bankAccount, notes } = req.body;
 
     const basic = parseFloat(basicSalary);
     const bonusAmt = parseFloat(bonus) || 0;
@@ -181,6 +191,7 @@ router.post('/salary', [
         paymentStatus: paymentStatus || 'PENDING',
         paymentDate: paymentDate ? new Date(paymentDate) : null,
         paymentMethod: paymentMethod || null,
+        bankAccount: bankAccount || 'CASH',
         notes: notes || null,
       },
       include: { user: { select: { name: true, email: true, role: true } } },
@@ -419,10 +430,12 @@ async function generateSalarySlipPDF(record, filePath) {
     const leftX = 50, rightX = W / 2 + 10;
     doc.fillColor('#374151').fontSize(9);
     const leftDetails = [['Employee Name', employeeName], ['Designation', designation], ['Department', department]];
+    const bankLabels = { HDFC: 'HDFC Bank', ICICI: 'ICICI Bank', IDFC: 'IDFC Bank', CASH: 'Cash' };
     const rightDetails = [
       [`Salary Slip No`, `SS-${record.year}-${record.id.slice(-6).toUpperCase()}`],
       ['Payment Date', record.paymentDate ? new Date(record.paymentDate).toLocaleDateString('en-IN') : '—'],
       ['Payment Mode', record.paymentMethod || '—'],
+      ['Paid From', bankLabels[record.bankAccount] || 'Cash'],
     ];
     const startY = y;
     for (const [l, v] of leftDetails) {

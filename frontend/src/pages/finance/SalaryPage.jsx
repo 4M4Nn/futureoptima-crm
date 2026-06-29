@@ -9,6 +9,7 @@ import { Modal, LoadingState, EmptyState } from '../../components/ui/index';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
+const BANK_ACCOUNTS = [{ value: 'HDFC', label: 'HDFC Bank' }, { value: 'ICICI', label: 'ICICI Bank' }, { value: 'IDFC', label: 'IDFC Bank' }, { value: 'CASH', label: 'Cash' }];
 
 const now = new Date();
 const STATUS_COLORS = {
@@ -30,6 +31,7 @@ const defaultForm = {
   paymentStatus: 'PENDING',
   paymentDate: '',
   paymentMethod: '',
+  bankAccount: 'CASH',
   notes: '',
 };
 
@@ -100,6 +102,7 @@ export default function SalaryPage() {
       paymentStatus: form.paymentStatus,
       paymentDate: form.paymentDate || null,
       paymentMethod: form.paymentMethod || null,
+      bankAccount: form.bankAccount || 'CASH',
       notes: form.notes || null,
     };
     addMutation.mutate(payload);
@@ -205,7 +208,7 @@ export default function SalaryPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    {['Employee', 'Designation', 'Month/Year', 'Basic', 'Bonus', 'Deductions', 'Net Salary', 'Status', 'Method', 'Action'].map(h => (
+                    {['Employee', 'Designation', 'Month/Year', 'Basic', 'Bonus', 'Deductions', 'Net Salary', 'Status', 'Method', 'Account', 'Action'].map(h => (
                       <th key={h} className="text-left text-xs font-medium text-gray-500 px-4 py-3">{h}</th>
                     ))}
                   </tr>
@@ -231,6 +234,7 @@ export default function SalaryPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-500">{rec.paymentMethod || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{BANK_ACCOUNTS.find(b => b.value === rec.bankAccount)?.label || rec.bankAccount || '—'}</td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => downloadSlip(rec)}
@@ -404,6 +408,12 @@ export default function SalaryPage() {
               <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} className="input">
                 <option value="">Select method</option>
                 {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Paid From (Account)</label>
+              <select value={form.bankAccount} onChange={e => setForm(f => ({ ...f, bankAccount: e.target.value }))} className="input">
+                {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
               </select>
             </div>
           </div>
