@@ -150,29 +150,38 @@ router.get('/expenses', async (req, res) => {
 
 // POST /api/finance/salary
 router.post('/salary', [
-  body('userId').notEmpty(),
+  body('employeeName').notEmpty().withMessage('employeeName is required'),
   body('month').isInt({ min: 1, max: 12 }),
   body('year').isInt({ min: 2020 }),
   body('basicSalary').isFloat({ min: 0 }),
-  body('netSalary').isFloat({ min: 0 }),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
-    const { userId, month, year, basicSalary, bonus = 0, deductions = 0, netSalary, paymentStatus, paymentDate, paymentMethod, notes } = req.body;
+    const { userId, employeeName, designation, department, isExternalEmployee, month, year, basicSalary, bonus = 0, deductions = 0, paymentStatus, paymentDate, paymentMethod, notes } = req.body;
+
+    const basic = parseFloat(basicSalary);
+    const bonusAmt = parseFloat(bonus) || 0;
+    const deductAmt = parseFloat(deductions) || 0;
+    const netSalary = basic + bonusAmt - deductAmt;
+
     const record = await prisma.salaryRecord.create({
       data: {
-        userId,
+        userId: isExternalEmployee ? null : (userId || null),
+        employeeName,
+        designation: designation || null,
+        department: department || null,
+        isExternalEmployee: Boolean(isExternalEmployee),
         month: parseInt(month),
         year: parseInt(year),
-        basicSalary: parseFloat(basicSalary),
-        bonus: parseFloat(bonus),
-        deductions: parseFloat(deductions),
-        netSalary: parseFloat(netSalary),
+        basicSalary: basic,
+        bonus: bonusAmt,
+        deductions: deductAmt,
+        netSalary,
         paymentStatus: paymentStatus || 'PENDING',
         paymentDate: paymentDate ? new Date(paymentDate) : null,
-        paymentMethod,
-        notes,
+        paymentMethod: paymentMethod || null,
+        notes: notes || null,
       },
       include: { user: { select: { name: true, email: true, role: true } } },
     });
@@ -198,7 +207,15 @@ router.get('/salary', async (req, res) => {
       prisma.salaryRecord.aggregate({ where, _sum: { netSalary: true } }),
     ]);
 
-    res.json({ data: records, totalPayroll: total._sum.netSalary || 0 });
+    const data = records.map(r => ({
+      ...r,
+      employeeName: r.employeeName,
+      designation: r.designation,
+      department: r.department,
+      isExternalEmployee: r.isExternalEmployee,
+    }));
+
+    res.json({ data, totalPayroll: total._sum.netSalary || 0 });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -211,16 +228,19 @@ router.get('/salary/:id/slip', async (req, res) => {
     });
     if (!record) return res.status(404).json({ error: 'Salary record not found' });
 
-    const filename = `slip_${record.userId}_${record.year}_${String(record.month).padStart(2,'0')}.pdf`;
+    const filename = `slip_${record.id}.pdf`;
     const filePath = path.join(slipsDir, filename);
 
-    await generateSalarySlipPDF(record, filePath);
+    if (!fs.existsSync(filePath)) {
+      await generateSalarySlipPDF(record, filePath);
+    }
 
     await prisma.salaryRecord.update({ where: { id: record.id }, data: { slipGenerated: true } });
 
+    const safeName = record.employeeName.replace(/\s+/g, '-');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="salary-slip-${record.user.name.replace(/\s+/g,'-')}-${MONTH_NAMES[record.month-1]}-${record.year}.pdf"`);
-    res.sendFile(path.resolve(filePath));
+    res.setHeader('Content-Disposition', `attachment; filename="SalarySlip_${safeName}_${MONTH_NAMES[record.month-1]}_${record.year}.pdf"`);
+    fs.createReadStream(filePath).pipe(res);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -351,97 +371,139 @@ Keep it concise and practical.`;
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+function numToWords(n) {
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function h(x) {
+    if (x < 20) return ones[x];
+    if (x < 100) return tens[Math.floor(x/10)] + (x%10 ? ' '+ones[x%10] : '');
+    if (x < 1000) return ones[Math.floor(x/100)] + ' Hundred' + (x%100 ? ' '+h(x%100) : '');
+    if (x < 100000) return h(Math.floor(x/1000)) + ' Thousand' + (x%1000 ? ' '+h(x%1000) : '');
+    if (x < 10000000) return h(Math.floor(x/100000)) + ' Lakh' + (x%100000 ? ' '+h(x%100000) : '');
+    return h(Math.floor(x/10000000)) + ' Crore' + (x%10000000 ? ' '+h(x%10000000) : '');
+  }
+  return h(Math.floor(n));
+}
+
 async function generateSalarySlipPDF(record, filePath) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
     const stream = fs.createWriteStream(filePath);
     doc.pipe(stream);
 
     const W = doc.page.width;
+    const employeeName = record.employeeName;
+    const designation = record.designation || '—';
+    const department = record.department || '—';
 
-    // Header
-    doc.rect(0, 0, W, 100).fill('#1B2B6B');
-    doc.fillColor('white').fontSize(18).font('Helvetica-Bold')
-      .text(process.env.INSTITUTE_NAME || 'Future Optima IT Solutions', 40, 18, { align: 'center' });
-    doc.fontSize(10).font('Helvetica')
-      .text(process.env.INSTITUTE_ADDRESS || 'Kakkanad, Kochi, Kerala - 682030', 40, 44, { align: 'center' });
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('#F59E0B')
-      .text('SALARY SLIP', 40, 66, { align: 'center' });
+    // HEADER: navy blue background
+    doc.rect(0, 0, W, 110).fill('#1B2B6B');
+    doc.fillColor('white').fontSize(20).font('Helvetica-Bold')
+      .text(process.env.INSTITUTE_NAME || 'Future Optima IT Solutions', 50, 16, { align: 'center', width: W - 100 });
+    doc.fontSize(9).font('Helvetica')
+      .text(process.env.INSTITUTE_ADDRESS || 'Kakkanad, Kochi, Kerala - 682030', 50, 44, { align: 'center', width: W - 100 });
+    doc.fontSize(8)
+      .text(`Phone: ${process.env.INSTITUTE_PHONE || '+91-8891129333'}  |  Email: ${process.env.INSTITUTE_EMAIL || 'info@futureoptimaitsolutions.com'}`, 50, 58, { align: 'center', width: W - 100 });
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#F59E0B')
+      .text('SALARY SLIP', 50, 76, { align: 'center', width: W - 100 });
+    doc.fontSize(9).font('Helvetica').fillColor('white')
+      .text(`For the month of: ${MONTH_NAMES[record.month - 1]} ${record.year}`, 50, 96, { align: 'center', width: W - 100 });
 
-    // Month/Year
-    doc.fillColor('#1B2B6B').fontSize(13).font('Helvetica-Bold')
-      .text(`${MONTH_NAMES[record.month - 1]} ${record.year}`, 40, 116, { align: 'center' });
+    let y = 128;
 
-    doc.moveTo(40, 136).lineTo(W - 40, 136).strokeColor('#E5E7EB').lineWidth(1).stroke();
-
-    // Employee details
-    let y = 148;
-    doc.fillColor('#1B2B6B').fontSize(10).font('Helvetica-Bold').text('EMPLOYEE DETAILS', 40, y); y += 16;
-
-    const empDetails = [
-      ['Employee Name', record.user.name],
-      ['Email', record.user.email],
-      ['Role', record.user.role?.replace('_', ' ')],
-      ['Phone', record.user.phone || '—'],
-    ];
-    for (const [l, v] of empDetails) {
-      doc.fillColor('#374151').fontSize(9);
-      doc.font('Helvetica-Bold').text(l + ':', 40, y, { width: 130 });
-      doc.font('Helvetica').text(v, 175, y);
-      y += 14;
-    }
-
+    // EMPLOYEE DETAILS BOX
+    doc.rect(50, y, W - 100, 1).fill('#E5E7EB');
     y += 8;
-    doc.moveTo(40, y).lineTo(W - 40, y).strokeColor('#E5E7EB').lineWidth(0.5).stroke(); y += 12;
+    doc.fillColor('#1B2B6B').fontSize(10).font('Helvetica-Bold').text('EMPLOYEE DETAILS', 50, y); y += 16;
 
-    // Salary table
-    doc.fillColor('#1B2B6B').fontSize(10).font('Helvetica-Bold').text('SALARY DETAILS', 40, y); y += 14;
+    const leftX = 50, rightX = W / 2 + 10;
+    doc.fillColor('#374151').fontSize(9);
+    const leftDetails = [['Employee Name', employeeName], ['Designation', designation], ['Department', department]];
+    const rightDetails = [
+      [`Salary Slip No`, `SS-${record.year}-${record.id.slice(-6).toUpperCase()}`],
+      ['Payment Date', record.paymentDate ? new Date(record.paymentDate).toLocaleDateString('en-IN') : '—'],
+      ['Payment Mode', record.paymentMethod || '—'],
+    ];
+    const startY = y;
+    for (const [l, v] of leftDetails) {
+      doc.font('Helvetica-Bold').text(l + ':', leftX, y, { width: 110 });
+      doc.font('Helvetica').text(v, leftX + 115, y, { width: W / 2 - 130 });
+      y += 15;
+    }
+    y = startY;
+    for (const [l, v] of rightDetails) {
+      doc.font('Helvetica-Bold').text(l + ':', rightX, y, { width: 100 });
+      doc.font('Helvetica').text(v, rightX + 105, y, { width: W / 2 - 115 });
+      y += 15;
+    }
+    y = startY + leftDetails.length * 15 + 12;
 
-    // Table header
-    doc.rect(40, y, W - 80, 18).fill('#1B2B6B');
+    doc.rect(50, y, W - 100, 0.5).fill('#E5E7EB'); y += 14;
+
+    // EARNINGS TABLE
+    doc.fillColor('#1B2B6B').fontSize(10).font('Helvetica-Bold').text('EARNINGS', 50, y); y += 14;
+    doc.rect(50, y, W - 100, 18).fill('#1B2B6B');
     doc.fillColor('white').fontSize(9).font('Helvetica-Bold')
-      .text('Component', 48, y + 4)
-      .text('Amount (₹)', W - 150, y + 4, { width: 100, align: 'right' });
+      .text('Description', 58, y + 5)
+      .text('Amount (₹)', W - 160, y + 5, { width: 100, align: 'right' });
     y += 18;
 
-    const rows = [
-      ['Basic Salary', record.basicSalary],
-      ['Bonus / Incentive', record.bonus],
-      ['Deductions', -record.deductions],
-    ];
-    let rowIdx = 0;
-    for (const [label, amount] of rows) {
-      doc.rect(40, y, W - 80, 15).fill(rowIdx % 2 === 0 ? '#F9FAFB' : '#FFFFFF');
-      doc.fillColor(amount < 0 ? '#DC2626' : '#374151').fontSize(9).font('Helvetica');
-      doc.text(label, 48, y + 3);
-      doc.text(Math.abs(amount).toLocaleString('en-IN'), W - 150, y + 3, { width: 100, align: 'right' });
-      y += 15; rowIdx++;
-    }
+    const grossEarnings = record.basicSalary + record.bonus;
+    const earningsRows = [['Basic Salary', record.basicSalary], ['Bonus / Incentive', record.bonus], ['Gross Earnings', grossEarnings]];
+    earningsRows.forEach(([label, amount], i) => {
+      const isBold = i === earningsRows.length - 1;
+      doc.rect(50, y, W - 100, 15).fill(i % 2 === 0 ? '#F9FAFB' : '#FFFFFF');
+      doc.fillColor('#374151').fontSize(9).font(isBold ? 'Helvetica-Bold' : 'Helvetica');
+      doc.text(label, 58, y + 3);
+      doc.text(amount.toLocaleString('en-IN'), W - 160, y + 3, { width: 100, align: 'right' });
+      y += 15;
+    });
+    y += 10;
 
-    // Net salary row
-    doc.rect(40, y, W - 80, 20).fill('#1B2B6B');
-    doc.fillColor('white').fontSize(10).font('Helvetica-Bold')
-      .text('NET SALARY', 48, y + 5)
-      .text(`₹${record.netSalary.toLocaleString('en-IN')}`, W - 150, y + 5, { width: 100, align: 'right' });
-    y += 28;
+    // DEDUCTIONS TABLE
+    doc.fillColor('#1B2B6B').fontSize(10).font('Helvetica-Bold').text('DEDUCTIONS', 50, y); y += 14;
+    doc.rect(50, y, W - 100, 18).fill('#1B2B6B');
+    doc.fillColor('white').fontSize(9).font('Helvetica-Bold')
+      .text('Description', 58, y + 5)
+      .text('Amount (₹)', W - 160, y + 5, { width: 100, align: 'right' });
+    y += 18;
 
-    // Payment info
-    doc.fillColor('#374151').fontSize(9);
-    doc.font('Helvetica-Bold').text('Payment Status:', 40, y).font('Helvetica').text(record.paymentStatus, 155, y); y += 14;
-    if (record.paymentDate) {
-      doc.font('Helvetica-Bold').text('Payment Date:', 40, y).font('Helvetica').text(new Date(record.paymentDate).toLocaleDateString('en-IN'), 155, y); y += 14;
-    }
-    if (record.paymentMethod) {
-      doc.font('Helvetica-Bold').text('Payment Method:', 40, y).font('Helvetica').text(record.paymentMethod, 155, y); y += 14;
-    }
+    const deductRows = [['Deductions', record.deductions], ['Total Deductions', record.deductions]];
+    deductRows.forEach(([label, amount], i) => {
+      const isBold = i === deductRows.length - 1;
+      doc.rect(50, y, W - 100, 15).fill(i % 2 === 0 ? '#F9FAFB' : '#FFFFFF');
+      doc.fillColor('#374151').fontSize(9).font(isBold ? 'Helvetica-Bold' : 'Helvetica');
+      doc.text(label, 58, y + 3);
+      doc.text(amount.toLocaleString('en-IN'), W - 160, y + 3, { width: 100, align: 'right' });
+      y += 15;
+    });
+    y += 14;
+
+    // NET SALARY BOX
+    doc.rect(50, y, W - 100, 50).fill('#1B2B6B');
+    doc.fillColor('white').fontSize(16).font('Helvetica-Bold')
+      .text(`NET SALARY: ₹${record.netSalary.toLocaleString('en-IN')}`, 50, y + 10, { align: 'center', width: W - 100 });
+    doc.fontSize(9).font('Helvetica')
+      .text(`Amount in Words: ${numToWords(record.netSalary)} Rupees Only`, 50, y + 32, { align: 'center', width: W - 100 });
+    y += 64;
+
+    // NOTES
     if (record.notes) {
-      doc.font('Helvetica-Bold').text('Notes:', 40, y).font('Helvetica').text(record.notes, 155, y, { width: W - 200 }); y += 14;
+      doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text('Notes:', 50, y);
+      doc.font('Helvetica').text(record.notes, 50, y + 14, { width: W - 100 });
+      y += 30;
     }
 
-    y += 16;
-    doc.moveTo(40, y).lineTo(W - 40, y).strokeColor('#E5E7EB').lineWidth(0.5).stroke(); y += 12;
+    // FOOTER
+    y += 20;
+    doc.moveTo(50, y).lineTo(W - 50, y).strokeColor('#E5E7EB').lineWidth(0.5).stroke(); y += 12;
+    doc.fillColor('#374151').fontSize(9).font('Helvetica')
+      .text('Authorized Signature', W - 200, y, { width: 150, align: 'right' });
+    y += 30;
+    doc.moveTo(W - 200, y).lineTo(W - 50, y).strokeColor('#374151').lineWidth(0.5).stroke(); y += 8;
     doc.fillColor('#9CA3AF').fontSize(7)
-      .text('This is a computer-generated salary slip and does not require a physical signature.', 40, y, { align: 'center', width: W - 80 });
+      .text('This is a computer generated salary slip', 50, y, { align: 'center', width: W - 100 }); y += 10;
+    doc.text(process.env.INSTITUTE_NAME || 'Future Optima IT Solutions', 50, y, { align: 'center', width: W - 100 });
 
     doc.end();
     stream.on('finish', () => resolve(filePath));

@@ -463,21 +463,25 @@ model Expense {
 }
 
 model SalaryRecord {
-  id            String    @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  month         Int
-  year          Int
-  basicSalary   Float
-  bonus         Float     @default(0)
-  deductions    Float     @default(0)
-  netSalary     Float
-  paymentDate   DateTime?
-  paymentStatus String    @default("PENDING")
-  paymentMethod String?
-  notes         String?
-  slipGenerated Boolean   @default(false)
-  createdAt     DateTime  @default(now())
+  id                 String    @id @default(cuid())
+  userId             String?
+  user               User?     @relation(fields: [userId], references: [id])
+  employeeName       String
+  designation        String?
+  department         String?
+  isExternalEmployee Boolean   @default(false)
+  month              Int
+  year               Int
+  basicSalary        Float
+  bonus              Float     @default(0)
+  deductions         Float     @default(0)
+  netSalary          Float
+  paymentDate        DateTime?
+  paymentStatus      String    @default("PENDING")
+  paymentMethod      String?
+  notes              String?
+  slipGenerated      Boolean   @default(false)
+  createdAt          DateTime  @default(now())
 }
 
 model Certificate {

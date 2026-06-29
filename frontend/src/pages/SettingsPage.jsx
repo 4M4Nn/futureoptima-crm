@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Settings, Bot, MessageSquare, Building, Save, Wifi, WifiOff, Loader2 } from 'lucide-react';
+import { Settings, Bot, Building, Save, Wifi, WifiOff, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import api from '../utils/api';
 import { Input } from '../components/ui/index';
 import toast from 'react-hot-toast';
@@ -15,6 +15,8 @@ export default function SettingsPage() {
 
   const [form, setForm] = useState({ institute_name: '', whatsapp_enabled: 'true', ai_scoring_enabled: 'true', crm_name: '' });
   const [profileForm, setProfileForm] = useState({ name: user?.name || '', phone: '', currentPassword: '', newPassword: '' });
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState('');
 
   useEffect(() => { if (settings) setForm(f => ({ ...f, ...settings })); }, [settings]);
 
@@ -28,6 +30,16 @@ export default function SettingsPage() {
     mutationFn: (d) => api.post('/auth/change-password', d),
     onSuccess: () => { toast.success('Password changed!'); setProfileForm(p => ({ ...p, currentPassword: '', newPassword: '' })); },
     onError: (e) => toast.error(e.error || 'Failed'),
+  });
+
+  const clearDataMutation = useMutation({
+    mutationFn: () => api.post('/settings/clear-data', { confirmation: 'DELETE ALL' }),
+    onSuccess: () => {
+      toast.success('All data cleared successfully');
+      setShowClearModal(false);
+      setClearConfirmText('');
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Failed to clear data'),
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -148,6 +160,74 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+
+      {/* Danger Zone — SUPER_ADMIN only */}
+      {user?.role === 'SUPER_ADMIN' && (
+        <div className="border-2 border-red-200 rounded-2xl p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 bg-red-100 rounded-xl flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <h3 className="text-base font-bold text-red-700">Data Management — Danger Zone</h3>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            <strong>Clear All Data — Fresh Start.</strong> This will permanently delete ALL leads, students, payments, expenses and salary records. This cannot be undone.
+          </p>
+          <button
+            onClick={() => setShowClearModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" /> Clear All Data
+          </button>
+        </div>
+      )}
+
+      {/* Clear Data Confirmation Modal */}
+      {showClearModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <h2 className="text-lg font-bold text-red-700">Confirm Data Deletion</h2>
+            </div>
+            <p className="text-sm text-gray-700 mb-4">
+              This will permanently delete <strong>ALL leads, students, payments, expenses and salary records</strong>.
+              Users, courses, batches and settings will be kept intact.
+              <br /><br />
+              This action <strong>cannot be undone</strong>.
+            </p>
+            <div className="mb-4">
+              <label className="label text-sm">Type <strong>DELETE ALL</strong> to confirm</label>
+              <input
+                type="text"
+                value={clearConfirmText}
+                onChange={e => setClearConfirmText(e.target.value)}
+                className="input"
+                placeholder="DELETE ALL"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setShowClearModal(false); setClearConfirmText(''); }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => clearDataMutation.mutate()}
+                disabled={clearConfirmText !== 'DELETE ALL' || clearDataMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {clearDataMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {clearDataMutation.isPending ? 'Clearing...' : 'Yes, Delete Everything'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

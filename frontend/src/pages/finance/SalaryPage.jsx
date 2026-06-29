@@ -16,16 +16,30 @@ const STATUS_COLORS = {
   PAID: 'bg-green-100 text-green-700',
 };
 
+const defaultForm = {
+  employeeType: 'erp',
+  userId: '',
+  employeeName: '',
+  designation: '',
+  department: '',
+  month: now.getMonth() + 1,
+  year: now.getFullYear(),
+  basicSalary: '',
+  bonus: '0',
+  deductions: '0',
+  paymentStatus: 'PENDING',
+  paymentDate: '',
+  paymentMethod: '',
+  notes: '',
+};
+
 export default function SalaryPage() {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [filterYear, setFilterYear] = useState(now.getFullYear());
-  const [form, setForm] = useState({
-    userId: '', month: now.getMonth() + 1, year: now.getFullYear(),
-    basicSalary: '', bonus: '0', deductions: '0', netSalary: '',
-    paymentStatus: 'PENDING', paymentDate: '', paymentMethod: '', notes: '',
-  });
+  const [form, setForm] = useState(defaultForm);
+  const [netSalary, setNetSalary] = useState(0);
 
   const { data: usersData } = useQuery({
     queryKey: ['users-all'],
@@ -41,8 +55,14 @@ export default function SalaryPage() {
     const basic = parseFloat(form.basicSalary) || 0;
     const bonus = parseFloat(form.bonus) || 0;
     const deductions = parseFloat(form.deductions) || 0;
-    setForm(f => ({ ...f, netSalary: String(basic + bonus - deductions) }));
+    setNetSalary(basic + bonus - deductions);
   }, [form.basicSalary, form.bonus, form.deductions]);
+
+  const handleUserSelect = (userId) => {
+    const users = usersData?.data || usersData || [];
+    const user = users.find(u => u.id === userId);
+    setForm(f => ({ ...f, userId, employeeName: user?.name || '' }));
+  };
 
   const addMutation = useMutation({
     mutationFn: (body) => api.post('/finance/salary', body),
@@ -50,24 +70,49 @@ export default function SalaryPage() {
       toast.success('Salary record added!');
       qc.invalidateQueries({ queryKey: ['salary-records'] });
       setShowModal(false);
-      setForm({ userId: '', month: now.getMonth() + 1, year: now.getFullYear(), basicSalary: '', bonus: '0', deductions: '0', netSalary: '', paymentStatus: 'PENDING', paymentDate: '', paymentMethod: '', notes: '' });
+      setForm(defaultForm);
     },
-    onError: (err) => toast.error(err?.error || 'Failed to save record'),
+    onError: (err) => toast.error(err?.response?.data?.error || err?.error || 'Failed to save record'),
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.userId || !form.basicSalary) { toast.error('Fill all required fields'); return; }
-    addMutation.mutate({ ...form });
+    const isExternal = form.employeeType === 'external';
+    if (!form.employeeName || !form.basicSalary) {
+      toast.error('Employee name and basic salary are required');
+      return;
+    }
+    if (!isExternal && !form.userId) {
+      toast.error('Please select an employee');
+      return;
+    }
+    const payload = {
+      userId: isExternal ? null : form.userId,
+      employeeName: form.employeeName,
+      designation: form.designation || null,
+      department: form.department || null,
+      isExternalEmployee: isExternal,
+      month: form.month,
+      year: form.year,
+      basicSalary: form.basicSalary,
+      bonus: form.bonus || '0',
+      deductions: form.deductions || '0',
+      paymentStatus: form.paymentStatus,
+      paymentDate: form.paymentDate || null,
+      paymentMethod: form.paymentMethod || null,
+      notes: form.notes || null,
+    };
+    addMutation.mutate(payload);
   };
 
-  const downloadSlip = (id, name, month, year) => {
+  const downloadSlip = (id) => {
     window.open(`${import.meta.env.VITE_API_URL || ''}/api/finance/salary/${id}/slip`, '_blank');
   };
 
   const records = data?.data || [];
   const totalPayroll = data?.totalPayroll || 0;
   const users = usersData?.data || usersData || [];
+  const isExternal = form.employeeType === 'external';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -82,7 +127,7 @@ export default function SalaryPage() {
         </button>
       </div>
 
-      {/* Summary card */}
+      {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="card flex items-center gap-4">
           <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center">
@@ -148,7 +193,7 @@ export default function SalaryPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    {['Employee', 'Month/Year', 'Basic', 'Bonus', 'Deductions', 'Net Salary', 'Status', 'Method', 'Action'].map(h => (
+                    {['Employee', 'Designation', 'Month/Year', 'Basic', 'Bonus', 'Deductions', 'Net Salary', 'Status', 'Method', 'Action'].map(h => (
                       <th key={h} className="text-left text-xs font-medium text-gray-500 px-4 py-3">{h}</th>
                     ))}
                   </tr>
@@ -157,9 +202,12 @@ export default function SalaryPage() {
                   {records.map(rec => (
                     <motion.tr key={rec.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{rec.user?.name}</div>
-                        <div className="text-xs text-gray-400">{rec.user?.role?.replace('_', ' ')}</div>
+                        <div className="font-medium text-gray-900">{rec.employeeName}</div>
+                        <div className="text-xs text-gray-400">
+                          {rec.isExternalEmployee ? 'External' : (rec.user?.role?.replace('_', ' ') || '')}
+                        </div>
                       </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{rec.designation || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{MONTHS[rec.month - 1]} {rec.year}</td>
                       <td className="px-4 py-3 text-gray-700">{fmt(rec.basicSalary)}</td>
                       <td className="px-4 py-3 text-green-600">+{fmt(rec.bonus)}</td>
@@ -173,7 +221,7 @@ export default function SalaryPage() {
                       <td className="px-4 py-3 text-gray-500">{rec.paymentMethod || '—'}</td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => downloadSlip(rec.id, rec.user?.name, rec.month, rec.year)}
+                          onClick={() => downloadSlip(rec.id)}
                           className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
                         >
                           <Download className="w-3.5 h-3.5" /> Slip
@@ -189,16 +237,113 @@ export default function SalaryPage() {
       )}
 
       {/* Add Salary Modal */}
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Add Salary Record" size="lg">
+      <Modal open={showModal} onClose={() => { setShowModal(false); setForm(defaultForm); }} title="Add Salary Record" size="lg">
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="label">Employee *</label>
-              <select value={form.userId} onChange={e => setForm(f => ({ ...f, userId: e.target.value }))} className="input" required>
-                <option value="">Select employee</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role?.replace('_', ' ')})</option>)}
-              </select>
+
+          {/* Employee Type Toggle */}
+          <div>
+            <label className="label">Employee Type</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, employeeType: 'erp', userId: '', employeeName: '' }))}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  form.employeeType === 'erp'
+                    ? 'bg-primary-600 text-white border-primary-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'
+                }`}
+              >
+                ERP User
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, employeeType: 'external', userId: '' }))}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  form.employeeType === 'external'
+                    ? 'bg-primary-600 text-white border-primary-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'
+                }`}
+              >
+                External Employee
+              </button>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {!isExternal ? (
+              <div className="col-span-2">
+                <label className="label">Select Employee *</label>
+                <select
+                  value={form.userId}
+                  onChange={e => handleUserSelect(e.target.value)}
+                  className="input"
+                  required={!isExternal}
+                >
+                  <option value="">Select employee</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role?.replace('_', ' ')})</option>)}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div className="col-span-2">
+                  <label className="label">Employee Name *</label>
+                  <input
+                    type="text"
+                    value={form.employeeName}
+                    onChange={e => setForm(f => ({ ...f, employeeName: e.target.value }))}
+                    className="input"
+                    placeholder="e.g. Ravi Kumar"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label">Designation</label>
+                  <input
+                    type="text"
+                    value={form.designation}
+                    onChange={e => setForm(f => ({ ...f, designation: e.target.value }))}
+                    className="input"
+                    placeholder="e.g. Faculty, Trainer, Cleaning Staff"
+                  />
+                </div>
+                <div>
+                  <label className="label">Department</label>
+                  <input
+                    type="text"
+                    value={form.department}
+                    onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
+                    className="input"
+                    placeholder="e.g. Academic, Admin"
+                  />
+                </div>
+              </>
+            )}
+
+            {!isExternal && form.userId && (
+              <>
+                <div>
+                  <label className="label">Designation</label>
+                  <input
+                    type="text"
+                    value={form.designation}
+                    onChange={e => setForm(f => ({ ...f, designation: e.target.value }))}
+                    className="input"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div>
+                  <label className="label">Department</label>
+                  <input
+                    type="text"
+                    value={form.department}
+                    onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
+                    className="input"
+                    placeholder="Optional"
+                  />
+                </div>
+              </>
+            )}
+
             <div>
               <label className="label">Month *</label>
               <select value={form.month} onChange={e => setForm(f => ({ ...f, month: parseInt(e.target.value) }))} className="input">
@@ -213,19 +358,21 @@ export default function SalaryPage() {
             </div>
             <div>
               <label className="label">Basic Salary (₹) *</label>
-              <input type="number" min="0" value={form.basicSalary} onChange={e => setForm(f => ({ ...f, basicSalary: e.target.value }))} className="input" required />
+              <input type="number" min="0" value={form.basicSalary} onChange={e => setForm(f => ({ ...f, basicSalary: e.target.value }))} className="input" required placeholder="0" />
             </div>
             <div>
               <label className="label">Bonus (₹)</label>
-              <input type="number" min="0" value={form.bonus} onChange={e => setForm(f => ({ ...f, bonus: e.target.value }))} className="input" />
+              <input type="number" min="0" value={form.bonus} onChange={e => setForm(f => ({ ...f, bonus: e.target.value }))} className="input" placeholder="0" />
             </div>
             <div>
               <label className="label">Deductions (₹)</label>
-              <input type="number" min="0" value={form.deductions} onChange={e => setForm(f => ({ ...f, deductions: e.target.value }))} className="input" />
+              <input type="number" min="0" value={form.deductions} onChange={e => setForm(f => ({ ...f, deductions: e.target.value }))} className="input" placeholder="0" />
             </div>
             <div>
               <label className="label">Net Salary (₹)</label>
-              <input type="number" value={form.netSalary} readOnly className="input bg-gray-50 text-green-700 font-bold" />
+              <div className="input bg-gray-50 text-green-700 font-bold flex items-center">
+                {fmt(netSalary)}
+              </div>
             </div>
             <div>
               <label className="label">Payment Status</label>
@@ -234,10 +381,12 @@ export default function SalaryPage() {
                 <option value="PAID">Paid</option>
               </select>
             </div>
-            <div>
-              <label className="label">Payment Date</label>
-              <input type="date" value={form.paymentDate} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))} className="input" />
-            </div>
+            {form.paymentStatus === 'PAID' && (
+              <div>
+                <label className="label">Payment Date</label>
+                <input type="date" value={form.paymentDate} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))} className="input" />
+              </div>
+            )}
             <div>
               <label className="label">Payment Method</label>
               <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} className="input">
@@ -251,7 +400,7 @@ export default function SalaryPage() {
             <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="input resize-none" rows={2} placeholder="Optional" />
           </div>
           <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={() => { setShowModal(false); setForm(defaultForm); }} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={addMutation.isPending} className="btn-primary">
               {addMutation.isPending ? 'Saving...' : 'Save Record'}
             </button>

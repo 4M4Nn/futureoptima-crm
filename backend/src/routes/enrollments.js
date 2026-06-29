@@ -116,29 +116,26 @@ router.patch('/:id', async (req, res) => {
 
 router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
+    const { id } = req.params;
     const enrollment = await prisma.enrollment.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       include: {
         lead: { select: { id: true, name: true } },
-        payments: { where: { isCancelled: false }, select: { id: true } },
+        _count: { select: { payments: true } },
       },
     });
     if (!enrollment) return res.status(404).json({ error: 'Enrollment not found' });
-    if (enrollment.payments.length > 0) {
-      return res.status(400).json({ error: `Cannot delete enrollment with ${enrollment.payments.length} active payment(s). Cancel payments first.` });
+    if (enrollment._count.payments > 0) {
+      return res.status(400).json({ error: 'Cannot delete enrollment with payment history' });
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.certificate.deleteMany({ where: { enrollmentId: req.params.id } });
-      await tx.installment.deleteMany({ where: { enrollmentId: req.params.id } });
-      await tx.payment.deleteMany({ where: { enrollmentId: req.params.id } });
-      await tx.document.deleteMany({ where: { enrollmentId: req.params.id } });
-      await tx.enrollment.delete({ where: { id: req.params.id } });
-      await tx.lead.update({ where: { id: enrollment.lead.id }, data: { status: 'QUALIFIED', convertedAt: null } });
-    });
+    await prisma.installment.deleteMany({ where: { enrollmentId: id } });
+    await prisma.document.deleteMany({ where: { enrollmentId: id } });
+    await prisma.enrollment.delete({ where: { id } });
+    await prisma.lead.update({ where: { id: enrollment.lead.id }, data: { status: 'QUALIFIED', convertedAt: null } });
 
     await logActivity(enrollment.lead.id, req.user.id, 'ENROLLMENT_DELETED', { studentName: enrollment.lead.name });
-    res.json({ message: 'Enrollment deleted. Lead status reset to QUALIFIED.' });
+    res.json({ message: 'Enrollment deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
