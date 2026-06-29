@@ -53,9 +53,22 @@ function EnrollmentCard({ enrollment }) {
     }
   };
 
-  const downloadUrl = certResult
-    ? `${import.meta.env.VITE_API_URL || ''}/api/certificates/${certResult.id}/download`
-    : null;
+  const downloadCert = async () => {
+    if (!certResult) return;
+    try {
+      const res = await api.get(`/certificates/${certResult.id}/download`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${certResult.certificateNo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download certificate');
+    }
+  };
 
   return (
     <motion.div
@@ -104,10 +117,10 @@ function EnrollmentCard({ enrollment }) {
             <div className="text-sm font-semibold text-green-800 flex items-center gap-1.5"><CheckCircle className="w-4 h-4" />Certificate Generated!</div>
             <div className="text-xs text-green-600 mt-0.5 font-mono">{certResult.certificateNo}</div>
           </div>
-          <a href={downloadUrl} target="_blank" rel="noreferrer"
+          <button onClick={downloadCert}
             className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
             <Download className="w-3.5 h-3.5" />Download
-          </a>
+          </button>
         </div>
       ) : (
         <div className={`flex gap-2 ${isPending ? 'opacity-40 pointer-events-none' : ''}`}>
@@ -157,8 +170,20 @@ export default function CertificatesPage() {
     queryFn: () => api.get('/courses').then(r => r.data),
   });
 
-  const handleDownload = (certId) => {
-    window.open(`${import.meta.env.VITE_API_URL || ''}/api/certificates/${certId}/download`, '_blank');
+  const handleDownload = async (certId, certNo) => {
+    try {
+      const res = await api.get(`/certificates/${certId}/download`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${certNo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download certificate');
+    }
   };
 
   const enrollments = searchData?.data || [];
@@ -293,7 +318,7 @@ export default function CertificatesPage() {
                           <td className="px-4 py-3 text-gray-500">{cert.generatedBy?.name}</td>
                           <td className="px-4 py-3 text-center text-gray-500">{cert.downloadCount}</td>
                           <td className="px-4 py-3">
-                            <button onClick={() => handleDownload(cert.id)} className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium">
+                            <button onClick={() => handleDownload(cert.id, cert.certificateNo)} className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium">
                               <Download className="w-3.5 h-3.5" /> Download
                             </button>
                           </td>

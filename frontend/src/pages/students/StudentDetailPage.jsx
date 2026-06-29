@@ -166,6 +166,22 @@ function CertificateSection({ enrollment }) {
     }
   };
 
+  const downloadCert = async () => {
+    try {
+      const res = await api.get(`/certificates/${certResult.id}/download`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${certResult.certificateNo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download certificate');
+    }
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg">
       <div className="flex items-center gap-3 mb-4">
@@ -186,10 +202,10 @@ function CertificateSection({ enrollment }) {
           </div>
           <div className="text-sm text-green-100">Certificate No: <span className="font-bold text-white">{certResult.certificateNo}</span></div>
           <div className="flex gap-3">
-            <a href={`${import.meta.env.VITE_API_URL || ''}/api/certificates/${certResult.id}/download`} target="_blank" rel="noreferrer"
+            <button onClick={downloadCert}
               className="flex items-center gap-2 bg-white text-green-700 hover:bg-green-50 px-4 py-2 rounded-xl font-semibold text-sm transition-colors">
               <Download className="w-4 h-4" />Download Certificate
-            </a>
+            </button>
             <button onClick={() => setCertResult(null)} className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-medium text-sm transition-colors">
               Generate Another
             </button>

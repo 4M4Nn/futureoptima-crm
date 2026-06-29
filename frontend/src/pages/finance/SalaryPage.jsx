@@ -105,8 +105,20 @@ export default function SalaryPage() {
     addMutation.mutate(payload);
   };
 
-  const downloadSlip = (id) => {
-    window.open(`${import.meta.env.VITE_API_URL || ''}/api/finance/salary/${id}/slip`, '_blank');
+  const downloadSlip = async (rec) => {
+    try {
+      const res = await api.get(`/finance/salary/${rec.id}/slip`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `SalarySlip_${rec.employeeName}_${MONTHS[rec.month - 1]}_${rec.year}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download salary slip');
+    }
   };
 
   const records = data?.data || [];
@@ -221,7 +233,7 @@ export default function SalaryPage() {
                       <td className="px-4 py-3 text-gray-500">{rec.paymentMethod || '—'}</td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => downloadSlip(rec.id)}
+                          onClick={() => downloadSlip(rec)}
                           className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
                         >
                           <Download className="w-3.5 h-3.5" /> Slip
