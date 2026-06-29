@@ -339,7 +339,7 @@ export default function AIChatbotPage() {
     setIsTyping(true);
 
     try {
-      const { data: res } = await api.post('/aicommand/parse', { command });
+      const { data: res } = await api.post('/aicommand/execute', { command });
 
       if (res.requiresConfirmation) {
         const msgId = Date.now() + 1;

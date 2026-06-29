@@ -312,8 +312,8 @@ async function resolveWriteAction(action, data) {
   }
 }
 
-// POST /api/aicommand/parse — parse intent and resolve IDs, never write to DB
-router.post('/parse', async (req, res) => {
+// POST /api/aicommand/execute — parse intent and resolve IDs, never write to DB
+router.post('/execute', async (req, res) => {
   const { command } = req.body;
   if (!command?.trim()) return res.status(400).json({ error: 'Command required' });
 
