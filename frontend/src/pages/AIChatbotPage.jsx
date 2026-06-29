@@ -353,7 +353,7 @@ export default function AIChatbotPage() {
         addMsg({ role: 'ai', type: 'result', action: res.action, data: res.data, message: res.message, isError: res.isError });
       }
     } catch (err) {
-      addMsg({ role: 'ai', error: err?.response?.data?.error || 'Command failed. Please try again.' });
+      addMsg({ role: 'ai', error: err?.error || err?.message || 'Command failed. Please try again.' });
     } finally {
       setIsTyping(false);
     }
@@ -475,10 +475,11 @@ export default function AIChatbotPage() {
           : msg
       ));
     } catch (err) {
-      const errMsg = err?.response?.data?.error || err?.response?.data?.errors?.[0]?.msg || 'Action failed. Check permissions and try again.';
+      // axios interceptor rejects with err.response.data directly, so err IS the response body
+      const errMsg = err?.errors?.[0]?.msg || err?.error || err?.message || 'Action failed. Please try again.';
       setMessages(m => m.map(msg =>
         msg.id === pendingConfirmId
-          ? { ...msg, type: 'cancelled', error: errMsg }
+          ? { ...msg, type: 'failed', error: errMsg }
           : msg
       ));
     } finally {

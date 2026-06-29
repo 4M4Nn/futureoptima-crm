@@ -256,22 +256,30 @@ async function resolveWriteAction(action, data) {
     }
 
     case 'RECORD_PAYMENT': {
+      const amount = Number(data.amount);
+      if (!data.amount || amount <= 0) {
+        return { error: `How much is the payment? Include the amount — e.g. "record payment 5000 UPI HDFC for 9876543210"` };
+      }
       const lead = await prisma.lead.findFirst({ where: { phone: data.phone }, include: { enrollment: true } });
       if (!lead) return { error: `No lead found with phone ${data.phone}` };
       if (!lead.enrollment) return { error: `${lead.name} has no active enrollment` };
       const methodLabel = (data.method || 'CASH').replace(/_/g, ' ');
       return {
         resolvedData: { ...data, leadId: lead.id, leadName: lead.name, enrollmentId: lead.enrollment.id, balanceDue: lead.enrollment.balanceDue },
-        confirmText: `Record **${fmtAmt(data.amount)}** from **${lead.name}** via ${methodLabel} into **${BANK_LABELS[bank]}**? (Balance due: ${fmtAmt(lead.enrollment.balanceDue)})`,
+        confirmText: `Record **${fmtAmt(amount)}** from **${lead.name}** via ${methodLabel} into **${BANK_LABELS[bank]}**? (Balance due: ${fmtAmt(lead.enrollment.balanceDue)})`,
       };
     }
 
     case 'ADD_EXPENSE': {
+      const amount = Number(data.amount);
+      if (!data.amount || amount <= 0) {
+        return { error: `How much was this expense? Include the amount — e.g. "water expense 500 IDFC"` };
+      }
       const dateLabel = data.date || new Date().toISOString().slice(0, 10);
       const vendorLabel = data.vendor ? ` · ${data.vendor}` : '';
       return {
-        resolvedData: data,
-        confirmText: `Add expense **${data.category} ${fmtAmt(data.amount)}** · ${data.paymentMethod || 'Cash'} · **${BANK_LABELS[bank]}** · ${dateLabel}${vendorLabel}?`,
+        resolvedData: { ...data, amount },
+        confirmText: `Add expense **${data.category || 'Miscellaneous'} ${fmtAmt(amount)}** · ${data.paymentMethod || 'Cash'} · **${BANK_LABELS[bank]}** · ${dateLabel}${vendorLabel}?`,
       };
     }
 
@@ -297,13 +305,17 @@ async function resolveWriteAction(action, data) {
     }
 
     case 'ADD_SALARY': {
-      const net = (parseFloat(data.basicSalary) || 0) + (parseFloat(data.bonus) || 0) - (parseFloat(data.deductions) || 0);
+      const basicSalary = Number(data.basicSalary);
+      if (!data.basicSalary || basicSalary <= 0) {
+        return { error: `What is the basic salary amount? Include it — e.g. "add salary for Aman 25000 HDFC June 2026"` };
+      }
+      const net = basicSalary + (parseFloat(data.bonus) || 0) - (parseFloat(data.deductions) || 0);
       const bonusLabel = data.bonus && Number(data.bonus) > 0 ? ` + bonus ${fmtAmt(data.bonus)}` : '';
       const deductLabel = data.deductions && Number(data.deductions) > 0 ? ` - deductions ${fmtAmt(data.deductions)}` : '';
       const monthName = MONTH_NAMES[(data.month || 1) - 1];
       return {
-        resolvedData: data,
-        confirmText: `Add salary for **${data.employeeName}** — basic ${fmtAmt(data.basicSalary)}${bonusLabel}${deductLabel} = **net ${fmtAmt(net)}** · ${monthName} ${data.year} · paid from **${BANK_LABELS[bank]}**?`,
+        resolvedData: { ...data, basicSalary },
+        confirmText: `Add salary for **${data.employeeName}** — basic ${fmtAmt(basicSalary)}${bonusLabel}${deductLabel} = **net ${fmtAmt(net)}** · ${monthName} ${data.year} · paid from **${BANK_LABELS[bank]}**?`,
       };
     }
 
