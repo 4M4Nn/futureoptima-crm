@@ -14,15 +14,25 @@ Supported actions:
 CREATE_LEAD: data: { name, phone, email?, source, interestedCourse?, city?, followUpDate? (ISO date, defaults to tomorrow if not mentioned) }
 UPDATE_LEAD_STATUS: data: { phone, status }
 SCHEDULE_FOLLOWUP: data: { phone, date (ISO), notes? }
+MARK_CALLED: data: { phone, outcome ("INTERESTED"|"NOT_INTERESTED"|"CALLBACK"|"NO_ANSWER"), notes? }
 ADD_NOTE: data: { phone, note }
-RECORD_PAYMENT: data: { phone, amount (number), method, transactionId? }
+RECORD_PAYMENT: data: { phone, amount (number), method ("CASH"|"UPI"|"BANK_TRANSFER"|"CHEQUE"|"CARD"), transactionId?, bankAccount? ("HDFC"|"ICICI"|"IDFC"|"CASH", default "CASH") }
+ADD_EXPENSE: data: { category, amount (number), date (ISO today default), paymentMethod ("Cash"|"UPI"|"Bank Transfer"|"Cheque"), bankAccount? ("HDFC"|"ICICI"|"IDFC"|"CASH", default "CASH"), vendor?, notes? }
+DELETE_EXPENSE: data: { category?, amount? (number), vendor?, date? (ISO) }
+ADD_SALARY: data: { employeeName, month (1-12), year, basicSalary (number), bonus? (number default 0), deductions? (number default 0), paymentMethod? ("Cash"|"UPI"|"Bank Transfer"|"Cheque"), bankAccount? ("HDFC"|"ICICI"|"IDFC"|"CASH", default "CASH"), notes? }
 SEARCH_LEAD: data: { query }
 GET_FOLLOWUPS: data: { period: "today"|"tomorrow"|"overdue"|"week" }
 GET_STATS: data: { type: "hot_leads"|"today_collection"|"pending_fees"|"overview" }
-ADD_EXPENSE: data: { category, amount (number), date (ISO today default), paymentMethod, vendor?, notes? }
 GET_EXPENSES: data: { period: "today"|"week"|"month" }
 GET_FINANCE_SUMMARY: data: {}
 UNKNOWN: data: {}
+
+bankAccount mapping:
+hdfc|hdfc bank -> HDFC
+icici|icici bank -> ICICI
+idfc|idfc bank -> IDFC
+cash|hand|physical -> CASH
+default -> CASH
 
 Category mapping for expenses:
 water|food|tea|coffee|snacks|lunch|refreshment -> Miscellaneous
@@ -36,12 +46,13 @@ office|stationery|supplies|printing -> Office
 travel|transport|uber|fuel|petrol|auto|cab|rickshaw -> Travel
 default -> Miscellaneous
 
-Payment method:
-cash|hand|physical|nakit -> Cash
-upi|gpay|phonepe|paytm|googlepay -> UPI
-bank|transfer|neft|rtgs|imps -> Bank Transfer
-cheque|check -> Cheque
-default -> Cash
+Payment method (for RECORD_PAYMENT use enum values, for ADD_EXPENSE use label):
+cash|hand|physical -> CASH (enum) / Cash (label)
+upi|gpay|phonepe|paytm|googlepay -> UPI (enum) / UPI (label)
+bank|transfer|neft|rtgs|imps -> BANK_TRANSFER (enum) / Bank Transfer (label)
+cheque|check -> CHEQUE (enum) / Cheque (label)
+card|credit|debit -> CARD (enum)
+default -> CASH / Cash
 
 Course mapping:
 AI|artificial intelligence|automation|ai engineering -> AI_ENGINEERING
@@ -66,8 +77,14 @@ contacted|called -> CONTACTED
 qualified|interested -> QUALIFIED
 demo|scheduled -> DEMO_SCHEDULED
 won|joined|enrolled|admitted -> WON
-lost|not interested|rejected|deny -> LOST
+lost|not interested|rejected -> LOST
 nurturing|follow up -> NURTURING
+
+MARK_CALLED outcome mapping:
+interested|wants to join|very interested -> INTERESTED
+not interested|rejected|no -> NOT_INTERESTED
+callback|call back|call later|follow up|busy -> CALLBACK
+no answer|not picking|switched off|no response -> NO_ANSWER
 
 Always return:
 { "action": "ACTION_NAME", "data": { ... }, "message": "human friendly description of what you understood" }
@@ -75,9 +92,7 @@ Always return:
 Today's date is ${new Date().toISOString().slice(0, 10)}.`;
 
 async function callGroq(command) {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY not configured');
-  }
+  if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured');
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
@@ -91,99 +106,30 @@ async function callGroq(command) {
       temperature: 0.1,
     }),
   });
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message);
-  return JSON.parse(data.choices[0].message.content.trim());
+  const result = await response.json();
+  if (result.error) throw new Error(result.error.message);
+  return JSON.parse(result.choices[0].message.content.trim());
 }
 
-async function executeAction(action, data, userId) {
+const READ_ACTIONS = new Set(['SEARCH_LEAD', 'GET_FOLLOWUPS', 'GET_STATS', 'GET_EXPENSES', 'GET_FINANCE_SUMMARY']);
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+const BANK_LABELS = { HDFC: 'HDFC Bank', ICICI: 'ICICI Bank', IDFC: 'IDFC Bank', CASH: 'Cash' };
+
+function fmtAmt(n) { return '₹' + (Number(n) || 0).toLocaleString('en-IN'); }
+
+// Execute read-only actions — no DB writes
+async function executeReadAction(action, data) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-  const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate() + 7);
+  const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7);
 
   switch (action) {
-    case 'CREATE_LEAD': {
-      const existing = await prisma.lead.findFirst({ where: { phone: data.phone } });
-      if (existing) return { lead: existing, created: false, message: 'Lead already exists' };
-      const followUpAt = data.followUpDate ? new Date(data.followUpDate) : tomorrow;
-      const lead = await prisma.lead.create({
-        data: {
-          name: data.name,
-          phone: data.phone,
-          email: data.email,
-          source: data.source || 'OTHER',
-          interestedCourse: data.interestedCourse,
-          city: data.city,
-          assignedToId: userId,
-          nextFollowUpAt: followUpAt,
-        },
-      });
-      // Background AI scoring
-      import('../services/ollamaService.js').then(({ scoreLeadWithOllama }) => scoreLeadWithOllama(lead.id).catch(() => {}));
-      return { lead, created: true };
-    }
-
-    case 'UPDATE_LEAD_STATUS': {
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
-      if (!lead) return { error: `Lead with phone ${data.phone} not found` };
-      const updated = await prisma.lead.update({ where: { id: lead.id }, data: { status: data.status } });
-      return { lead: updated };
-    }
-
-    case 'SCHEDULE_FOLLOWUP': {
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
-      if (!lead) return { error: `Lead with phone ${data.phone} not found` };
-      await prisma.lead.update({ where: { id: lead.id }, data: { nextFollowUpAt: new Date(data.date) } });
-      if (data.notes) {
-        await prisma.note.create({ data: { leadId: lead.id, authorId: userId, content: `Follow-up scheduled: ${data.notes}` } });
-      }
-      return { lead: { id: lead.id, name: lead.name, nextFollowUpAt: data.date } };
-    }
-
-    case 'ADD_NOTE': {
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
-      if (!lead) return { error: `Lead with phone ${data.phone} not found` };
-      const note = await prisma.note.create({ data: { leadId: lead.id, authorId: userId, content: data.note } });
-      return { note, leadName: lead.name };
-    }
-
-    case 'RECORD_PAYMENT': {
-      const lead = await prisma.lead.findFirst({ where: { phone: data.phone }, include: { enrollment: true } });
-      if (!lead) return { error: `Lead with phone ${data.phone} not found` };
-      if (!lead.enrollment) return { error: `${lead.name} has no active enrollment` };
-      const enrollment = lead.enrollment;
-      const receiptNumber = `FO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
-      const payment = await prisma.$transaction(async (tx) => {
-        const p = await tx.payment.create({
-          data: {
-            enrollmentId: enrollment.id,
-            amount: data.amount,
-            method: data.method?.toUpperCase().replace(' ', '_') || 'CASH',
-            transactionId: data.transactionId,
-            receiptNumber,
-            collectedById: userId,
-          },
-        });
-        const newPaid = enrollment.paidAmount + data.amount;
-        const newBalance = enrollment.netFee - newPaid;
-        await tx.enrollment.update({
-          where: { id: enrollment.id },
-          data: { paidAmount: newPaid, balanceDue: newBalance, paymentStatus: newBalance <= 0 ? 'PAID' : 'PARTIAL' },
-        });
-        return p;
-      });
-      return { payment, studentName: lead.name, receiptNumber, balanceRemaining: enrollment.netFee - enrollment.paidAmount - data.amount };
-    }
-
     case 'SEARCH_LEAD': {
       const leads = await prisma.lead.findMany({
-        where: {
-          OR: [
-            { name: { contains: data.query, mode: 'insensitive' } },
-            { phone: { contains: data.query } },
-            { email: { contains: data.query, mode: 'insensitive' } },
-          ],
-        },
+        where: { OR: [{ name: { contains: data.query, mode: 'insensitive' } }, { phone: { contains: data.query } }, { email: { contains: data.query, mode: 'insensitive' } }] },
         take: 8,
         include: { enrollment: { include: { course: { select: { shortName: true } } } } },
       });
@@ -195,12 +141,13 @@ async function executeAction(action, data, userId) {
       if (data.period === 'today') where = { nextFollowUpAt: { gte: today, lt: tomorrow } };
       else if (data.period === 'tomorrow') where = { nextFollowUpAt: { gte: tomorrow, lt: new Date(tomorrow.getTime() + 86400000) } };
       else if (data.period === 'overdue') where = { nextFollowUpAt: { lt: today } };
-      else if (data.period === 'week') where = { nextFollowUpAt: { gte: today, lt: weekEnd } };
+      else where = { nextFollowUpAt: { gte: today, lt: weekEnd } };
       const leads = await prisma.lead.findMany({ where, take: 10, orderBy: { nextFollowUpAt: 'asc' }, include: { enrollment: { include: { course: { select: { shortName: true } } } } } });
-      return { leads, count: leads.length, period: data.period };
+      return { leads, count: leads.length, period: data.period || 'week' };
     }
 
     case 'GET_STATS': {
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       if (data.type === 'hot_leads') {
         const count = await prisma.lead.count({ where: { aiGrade: 'HOT' } });
         const leads = await prisma.lead.findMany({ where: { aiGrade: 'HOT' }, take: 5, orderBy: { aiScore: 'desc' } });
@@ -216,26 +163,10 @@ async function executeAction(action, data, userId) {
           prisma.lead.count(),
           prisma.enrollment.count(),
           prisma.payment.aggregate({ where: { paidAt: { gte: today } }, _sum: { amount: true } }),
-          prisma.payment.aggregate({ where: { paidAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) } }, _sum: { amount: true } }),
+          prisma.payment.aggregate({ where: { paidAt: { gte: monthStart } }, _sum: { amount: true } }),
         ]);
         return { totalLeads: leads, totalEnrollments: enrollments, todayCollection: todayPay._sum.amount || 0, monthCollection: monthPay._sum.amount || 0 };
       }
-    }
-
-    case 'ADD_EXPENSE': {
-      const expense = await prisma.expense.create({
-        data: {
-          category: data.category || 'Miscellaneous',
-          amount: data.amount,
-          date: new Date(data.date || new Date().toISOString().slice(0, 10)),
-          paymentMethod: data.paymentMethod || 'Cash',
-          vendor: data.vendor,
-          notes: data.notes,
-          addedById: userId,
-        },
-        include: { addedBy: { select: { name: true } } },
-      });
-      return { expense };
     }
 
     case 'GET_EXPENSES': {
@@ -243,7 +174,7 @@ async function executeAction(action, data, userId) {
       let from = monthStart;
       if (data.period === 'today') from = today;
       else if (data.period === 'week') { from = new Date(today); from.setDate(today.getDate() - 7); }
-      const expenses = await prisma.expense.findMany({ where: { date: { gte: from } }, orderBy: { date: 'desc' }, take: 20 });
+      const expenses = await prisma.expense.findMany({ where: { date: { gte: from } }, orderBy: { date: 'desc' }, take: 20, include: { addedBy: { select: { name: true } } } });
       const total = expenses.reduce((s, e) => s + e.amount, 0);
       return { expenses, total, period: data.period };
     }
@@ -267,52 +198,157 @@ async function executeAction(action, data, userId) {
     }
 
     default:
-      return { message: 'Command not understood. Please try rephrasing.' };
+      return {};
   }
 }
 
-// POST /api/aicommand/execute
-router.post('/execute', async (req, res) => {
+// Resolve write action: look up IDs and build confirm text — NO DB writes
+async function resolveWriteAction(action, data) {
+  const bank = data.bankAccount || 'CASH';
+
+  switch (action) {
+    case 'CREATE_LEAD': {
+      const followUpLabel = data.followUpDate ? ` · follow-up ${data.followUpDate}` : '';
+      const courseLabel = data.interestedCourse ? ` · ${data.interestedCourse.replace(/_/g, ' ')}` : '';
+      const sourceLabel = data.source ? ` · ${data.source.replace(/_/g, ' ')}` : '';
+      return {
+        resolvedData: data,
+        confirmText: `Add lead **${data.name}** (${data.phone})${courseLabel}${sourceLabel}${followUpLabel}?`,
+      };
+    }
+
+    case 'UPDATE_LEAD_STATUS': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      return {
+        resolvedData: { ...data, leadId: lead.id, leadName: lead.name },
+        confirmText: `Update **${lead.name}**'s status to **${data.status}**?`,
+      };
+    }
+
+    case 'SCHEDULE_FOLLOWUP': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      return {
+        resolvedData: { ...data, leadId: lead.id, leadName: lead.name },
+        confirmText: `Set follow-up for **${lead.name}** to **${data.date}**?`,
+      };
+    }
+
+    case 'ADD_NOTE': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      return {
+        resolvedData: { ...data, leadId: lead.id, leadName: lead.name },
+        confirmText: `Add note for **${lead.name}**: "${data.note}"?`,
+      };
+    }
+
+    case 'MARK_CALLED': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      const outcomeLabel = (data.outcome || '').replace(/_/g, ' ');
+      const notesLabel = data.notes ? ` · "${data.notes}"` : '';
+      return {
+        resolvedData: { ...data, leadId: lead.id, leadName: lead.name },
+        confirmText: `Log call with **${lead.name}** — outcome: **${outcomeLabel}**${notesLabel}?`,
+      };
+    }
+
+    case 'RECORD_PAYMENT': {
+      const lead = await prisma.lead.findFirst({ where: { phone: data.phone }, include: { enrollment: true } });
+      if (!lead) return { error: `No lead found with phone ${data.phone}` };
+      if (!lead.enrollment) return { error: `${lead.name} has no active enrollment` };
+      const methodLabel = (data.method || 'CASH').replace(/_/g, ' ');
+      return {
+        resolvedData: { ...data, leadId: lead.id, leadName: lead.name, enrollmentId: lead.enrollment.id, balanceDue: lead.enrollment.balanceDue },
+        confirmText: `Record **${fmtAmt(data.amount)}** from **${lead.name}** via ${methodLabel} into **${BANK_LABELS[bank]}**? (Balance due: ${fmtAmt(lead.enrollment.balanceDue)})`,
+      };
+    }
+
+    case 'ADD_EXPENSE': {
+      const dateLabel = data.date || new Date().toISOString().slice(0, 10);
+      const vendorLabel = data.vendor ? ` · ${data.vendor}` : '';
+      return {
+        resolvedData: data,
+        confirmText: `Add expense **${data.category} ${fmtAmt(data.amount)}** · ${data.paymentMethod || 'Cash'} · **${BANK_LABELS[bank]}** · ${dateLabel}${vendorLabel}?`,
+      };
+    }
+
+    case 'DELETE_EXPENSE': {
+      const where = {};
+      if (data.category) where.category = data.category;
+      if (data.amount) where.amount = Number(data.amount);
+      if (data.vendor) where.vendor = { contains: data.vendor, mode: 'insensitive' };
+      if (data.date) where.date = { gte: new Date(data.date), lte: new Date(data.date + 'T23:59:59') };
+
+      const matches = await prisma.expense.findMany({ where, orderBy: { date: 'desc' }, take: 5 });
+      if (matches.length === 0) return { error: 'No matching expense found. Try adding the amount or date to narrow it down.' };
+      if (matches.length > 1) return { error: `Found ${matches.length} matching expenses. Please be more specific (add amount or date).` };
+
+      const exp = matches[0];
+      const dateStr = new Date(exp.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const vendorPart = exp.vendor ? ` (${exp.vendor})` : '';
+      return {
+        resolvedData: { expenseId: exp.id, category: exp.category, amount: exp.amount, date: exp.date, vendor: exp.vendor },
+        confirmText: `⚠️ Permanently delete **${exp.category} ${fmtAmt(exp.amount)}**${vendorPart} · ${dateStr}? This cannot be undone.`,
+        isDangerous: true,
+      };
+    }
+
+    case 'ADD_SALARY': {
+      const net = (parseFloat(data.basicSalary) || 0) + (parseFloat(data.bonus) || 0) - (parseFloat(data.deductions) || 0);
+      const bonusLabel = data.bonus && Number(data.bonus) > 0 ? ` + bonus ${fmtAmt(data.bonus)}` : '';
+      const deductLabel = data.deductions && Number(data.deductions) > 0 ? ` - deductions ${fmtAmt(data.deductions)}` : '';
+      const monthName = MONTH_NAMES[(data.month || 1) - 1];
+      return {
+        resolvedData: data,
+        confirmText: `Add salary for **${data.employeeName}** — basic ${fmtAmt(data.basicSalary)}${bonusLabel}${deductLabel} = **net ${fmtAmt(net)}** · ${monthName} ${data.year} · paid from **${BANK_LABELS[bank]}**?`,
+      };
+    }
+
+    default:
+      return { resolvedData: data, confirmText: 'Confirm this action?' };
+  }
+}
+
+// POST /api/aicommand/parse — parse intent and resolve IDs, never write to DB
+router.post('/parse', async (req, res) => {
   const { command } = req.body;
   if (!command?.trim()) return res.status(400).json({ error: 'Command required' });
 
-  let parsedAction = null;
-  let success = false;
-  let resultData = null;
-
   try {
-    parsedAction = await callGroq(command);
-    resultData = await executeAction(parsedAction.action, parsedAction.data || {}, req.user.id);
-    success = !resultData?.error;
+    const parsed = await callGroq(command);
 
     await prisma.aICommand.create({
-      data: {
-        userId: req.user.id,
-        command,
-        action: parsedAction.action,
-        result: JSON.stringify(resultData).slice(0, 2000),
-        success,
-      },
+      data: { userId: req.user.id, command, action: parsed.action, result: parsed.message || '', success: true },
     }).catch(() => {});
 
-    res.json({
-      success,
-      action: parsedAction.action,
-      message: parsedAction.message || '',
-      data: resultData,
+    if (READ_ACTIONS.has(parsed.action)) {
+      const data = await executeReadAction(parsed.action, parsed.data || {});
+      return res.json({ action: parsed.action, data, message: parsed.message, requiresConfirmation: false });
+    }
+
+    if (parsed.action === 'UNKNOWN') {
+      return res.json({ action: 'UNKNOWN', data: {}, message: parsed.message || "I didn't understand that. Try: 'Add lead Rahul 9876543210' or 'Electricity expense 500 HDFC'", requiresConfirmation: false });
+    }
+
+    const resolved = await resolveWriteAction(parsed.action, parsed.data || {});
+
+    if (resolved.error) {
+      return res.json({ action: parsed.action, data: {}, message: resolved.error, requiresConfirmation: false, isError: true });
+    }
+
+    return res.json({
+      action: parsed.action,
+      data: resolved.resolvedData,
+      message: parsed.message,
+      confirmText: resolved.confirmText,
+      requiresConfirmation: true,
+      isDangerous: resolved.isDangerous || false,
     });
   } catch (err) {
-    await prisma.aICommand.create({
-      data: {
-        userId: req.user.id,
-        command,
-        action: parsedAction?.action || 'ERROR',
-        result: err.message,
-        success: false,
-      },
-    }).catch(() => {});
-
-    res.status(500).json({ success: false, error: err.message, action: 'ERROR' });
+    res.status(500).json({ error: err.message });
   }
 });
 
