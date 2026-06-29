@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Send, User, CheckCircle, XCircle, CreditCard, Receipt, Users, TrendingUp, AlertTriangle, PhoneCall, Search, Mic, Trash2, Banknote, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -304,6 +305,7 @@ function MessageBubble({ msg, onConfirm, onCancel, isConfirming }) {
 }
 
 export default function AIChatbotPage() {
+  const qc = useQueryClient();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -381,12 +383,14 @@ export default function AIChatbotPage() {
             nextFollowUpAt: data.followUpDate ? new Date(data.followUpDate).toISOString() : today.toISOString(),
           });
           resultData = { lead: res.data, created: true };
+          qc.invalidateQueries({ queryKey: ['leads'] });
           break;
         }
 
         case 'UPDATE_LEAD_STATUS': {
           const res = await api.patch(`/leads/${data.leadId}`, { status: data.status });
           resultData = res.data;
+          qc.invalidateQueries({ queryKey: ['leads'] });
           break;
         }
 
@@ -396,12 +400,14 @@ export default function AIChatbotPage() {
             notes: data.notes || undefined,
           });
           resultData = res.data;
+          qc.invalidateQueries({ queryKey: ['leads'] });
           break;
         }
 
         case 'ADD_NOTE': {
           const res = await api.post(`/leads/${data.leadId}/notes`, { content: data.note });
           resultData = res.data;
+          qc.invalidateQueries({ queryKey: ['leads'] });
           break;
         }
 
@@ -411,6 +417,7 @@ export default function AIChatbotPage() {
             notes: data.notes || undefined,
           });
           resultData = res.data;
+          qc.invalidateQueries({ queryKey: ['leads'] });
           break;
         }
 
@@ -423,6 +430,9 @@ export default function AIChatbotPage() {
             bankAccount: data.bankAccount || 'CASH',
           });
           resultData = { ...res.data, leadName: data.leadName, bankAccount: data.bankAccount || 'CASH' };
+          qc.invalidateQueries({ queryKey: ['payments'] });
+          qc.invalidateQueries({ queryKey: ['payment-stats'] });
+          qc.invalidateQueries({ queryKey: ['enrollments'] });
           break;
         }
 
@@ -437,12 +447,16 @@ export default function AIChatbotPage() {
             notes: data.notes || undefined,
           });
           resultData = { expense: res.data };
+          qc.invalidateQueries({ queryKey: ['expenses'] });
+          qc.invalidateQueries({ queryKey: ['finance-dashboard'] });
           break;
         }
 
         case 'DELETE_EXPENSE': {
           await api.delete(`/finance/expenses/${data.expenseId}`);
           resultData = { deleted: true, category: data.category, amount: data.amount };
+          qc.invalidateQueries({ queryKey: ['expenses'] });
+          qc.invalidateQueries({ queryKey: ['finance-dashboard'] });
           break;
         }
 
@@ -461,6 +475,7 @@ export default function AIChatbotPage() {
             notes: data.notes || undefined,
           });
           resultData = { salary: res.data };
+          qc.invalidateQueries({ queryKey: ['salary-records'] });
           break;
         }
 
