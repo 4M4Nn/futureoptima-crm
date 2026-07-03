@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { GraduationCap, Search, RefreshCw, Download, Trash2 } from 'lucide-react';
+import { GraduationCap, Search, RefreshCw, Download, Trash2, FileSpreadsheet } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
@@ -32,6 +32,27 @@ export default function StudentsPage() {
   const [payStatus, setPayStatus] = useState('');
   const [courseId, setCourseId] = useState('');
   const [batchId, setBatchId] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const exportExcel = async () => {
+    try {
+      setExporting(true);
+      const response = await api.get('/enrollments/export-excel', { responseType: 'blob' });
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'FutureOptima_Students.xlsx';
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast.success('Excel downloaded!');
+    } catch {
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const { data: coursesData } = useQuery({
     queryKey: ['courses'],
@@ -78,6 +99,13 @@ export default function StudentsPage() {
           <h1 className="page-title">Students</h1>
           <p className="text-gray-500 text-sm">{data?.pagination?.total || 0} enrolled students</p>
         </div>
+        <button
+          disabled={exporting}
+          onClick={exportExcel}
+          className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 transition-colors disabled:opacity-50"
+        >
+          <FileSpreadsheet className="w-4 h-4" /> {exporting ? 'Downloading...' : 'Export Excel'}
+        </button>
       </div>
 
       <div className="card p-4 flex flex-wrap gap-3">

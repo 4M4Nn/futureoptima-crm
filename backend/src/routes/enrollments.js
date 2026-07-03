@@ -3,9 +3,65 @@ import { body, validationResult } from 'express-validator';
 import { prisma } from '../utils/prisma.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { logActivity } from '../utils/activityLogger.js';
+import { newWorkbook, addTableSheet, sendWorkbook } from '../utils/excelExport.js';
 
 const router = express.Router();
 router.use(authenticate);
+
+// GET /api/enrollments/export-excel
+router.get('/export-excel', async (req, res) => {
+  try {
+    const enrollments = await prisma.enrollment.findMany({
+      orderBy: { enrolledAt: 'desc' },
+      include: {
+        lead: { select: { name: true, phone: true, email: true, assignedTo: { select: { name: true } } } },
+        course: { select: { name: true, shortName: true } },
+        batch: { select: { batchName: true, mode: true } },
+      },
+    });
+
+    const wb = newWorkbook();
+    addTableSheet(wb, 'Students', [
+      { header: 'Student Name', key: 'studentName', width: 22 },
+      { header: 'Phone', key: 'phone', width: 16, text: true },
+      { header: 'Email', key: 'email', width: 24 },
+      { header: 'Course', key: 'course', width: 22 },
+      { header: 'Batch', key: 'batch', width: 16 },
+      { header: 'Mode', key: 'mode', width: 12 },
+      { header: 'Enrollment Date', key: 'enrolledAt', width: 16 },
+      { header: 'Total Fee', key: 'totalFee', width: 16, money: true },
+      { header: 'Discount', key: 'discount', width: 14, money: true },
+      { header: 'Net Fee', key: 'netFee', width: 16, money: true },
+      { header: 'Total Paid', key: 'totalPaid', width: 16, money: true },
+      { header: 'Balance Due', key: 'balanceDue', width: 16, money: true },
+      { header: 'Payment Status', key: 'paymentStatus', width: 14 },
+      { header: 'Enrollment Status', key: 'status', width: 16 },
+      { header: 'Counselor', key: 'counselor', width: 18 },
+      { header: 'Receipt No', key: 'receiptNo', width: 20 },
+      { header: 'Certificate Generated', key: 'certGenerated', width: 18 },
+    ], enrollments.map(e => ({
+      studentName: e.lead?.name || '',
+      phone: e.lead?.phone || '',
+      email: e.lead?.email || '',
+      course: e.course?.name || '',
+      batch: e.batch?.batchName || '',
+      mode: e.batch?.mode || '',
+      enrolledAt: e.enrolledAt ? new Date(e.enrolledAt).toLocaleDateString('en-IN') : '',
+      totalFee: e.courseFee,
+      discount: e.discountAmount,
+      netFee: e.netFee,
+      totalPaid: e.paidAmount,
+      balanceDue: e.balanceDue,
+      paymentStatus: e.paymentStatus,
+      status: e.status,
+      counselor: e.lead?.assignedTo?.name || '',
+      receiptNo: e.receiptNo,
+      certGenerated: e.certificateNo ? 'Yes' : 'No',
+    })));
+
+    await sendWorkbook(res, wb, 'FutureOptima_Students.xlsx');
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 router.post('/', [
   body('leadId').notEmpty(),

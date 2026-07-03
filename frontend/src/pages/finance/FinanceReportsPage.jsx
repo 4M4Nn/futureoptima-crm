@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Download, FileText, TrendingUp, AlertTriangle, Users, Receipt } from 'lucide-react';
+import { Download, FileText, TrendingUp, AlertTriangle, Users, Receipt, FileSpreadsheet } from 'lucide-react';
+import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
 import { LoadingState, EmptyState } from '../../components/ui/index';
@@ -36,6 +37,27 @@ export default function FinanceReportsPage() {
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [filterYear, setFilterYear] = useState(now.getFullYear());
   const [filterCat, setFilterCat] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const exportExcel = async (url, filename) => {
+    try {
+      setExporting(true);
+      const response = await api.get(url, { responseType: 'blob' });
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast.success('Excel downloaded!');
+    } catch {
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const { data: plData, isLoading: plLoading } = useQuery({
     queryKey: ['finance-pl', from, to],
@@ -139,6 +161,19 @@ export default function FinanceReportsPage() {
       {tab === 'pl' && (
         plLoading ? <LoadingState text="Calculating P&L..." /> : (
           <div className="space-y-4">
+            <div className="flex justify-end">
+              <button
+                disabled={exporting}
+                onClick={() => {
+                  const toDate = new Date(to);
+                  const filename = `FutureOptima_PL_${MONTHS[toDate.getMonth()]}_${toDate.getFullYear()}.xlsx`;
+                  exportExcel(`/finance/reports/pl-excel?from=${from}&to=${to}`, filename);
+                }}
+                className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 transition-colors disabled:opacity-50"
+              >
+                <FileSpreadsheet className="w-4 h-4" /> {exporting ? 'Downloading...' : 'Download Excel (GST)'}
+              </button>
+            </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="card text-center">
                 <div className="text-sm text-gray-500 mb-1">Total Income</div>
@@ -205,12 +240,21 @@ export default function FinanceReportsPage() {
                 <span className="text-xl font-bold text-green-600">{fmt(collData?.totalAmount)}</span>
                 <span className="text-sm text-gray-400">({collData?.totalCount} payments)</span>
               </div>
-              <button
-                onClick={() => exportCSV((collData?.data || []).map(p => ({ Date: fmtDate(p.paidAt), Student: p.enrollment?.lead?.name, Course: p.enrollment?.course?.shortName, Amount: p.amount, Method: p.method, CollectedBy: p.collectedBy?.name })), 'collections.csv')}
-                className="btn-secondary flex items-center gap-2 text-sm"
-              >
-                <Download className="w-4 h-4" /> Export CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => exportCSV((collData?.data || []).map(p => ({ Date: fmtDate(p.paidAt), Student: p.enrollment?.lead?.name, Course: p.enrollment?.course?.shortName, Amount: p.amount, Method: p.method, CollectedBy: p.collectedBy?.name })), 'collections.csv')}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  <Download className="w-4 h-4" /> Export CSV
+                </button>
+                <button
+                  disabled={exporting}
+                  onClick={() => exportExcel(`/finance/reports/collection-excel?from=${from}&to=${to}`, `FutureOptima_Collection_${from}_to_${to}.xlsx`)}
+                  className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 transition-colors disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="w-4 h-4" /> {exporting ? 'Downloading...' : 'Export with Phone Numbers'}
+                </button>
+              </div>
             </div>
             <div className="card p-0 overflow-hidden">
               {(collData?.data || []).length === 0 ? <EmptyState title="No payments in this period" /> : (
@@ -253,12 +297,21 @@ export default function FinanceReportsPage() {
                 <span className="text-xl font-bold text-red-600">{fmt(pendingData?.totalPending)}</span>
                 <span className="text-sm text-gray-400">({(pendingData?.data || []).length} students)</span>
               </div>
-              <button
-                onClick={() => exportCSV((pendingData?.data || []).map(s => ({ Name: s.name, Phone: s.phone, Course: s.course, EnrolledAt: fmtDate(s.enrolledAt), TotalFee: s.totalFee, Paid: s.paid, Balance: s.balance })), 'pending-fees.csv')}
-                className="btn-secondary flex items-center gap-2 text-sm"
-              >
-                <Download className="w-4 h-4" /> Export CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => exportCSV((pendingData?.data || []).map(s => ({ Name: s.name, Phone: s.phone, Course: s.course, EnrolledAt: fmtDate(s.enrolledAt), TotalFee: s.totalFee, Paid: s.paid, Balance: s.balance })), 'pending-fees.csv')}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  <Download className="w-4 h-4" /> Export CSV
+                </button>
+                <button
+                  disabled={exporting}
+                  onClick={() => exportExcel('/finance/reports/pending-excel', 'FutureOptima_Pending_Fees.xlsx')}
+                  className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 transition-colors disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="w-4 h-4" /> {exporting ? 'Downloading...' : 'Export Pending List'}
+                </button>
+              </div>
             </div>
             <div className="card p-0 overflow-hidden">
               {(pendingData?.data || []).length === 0 ? <EmptyState title="No pending fees" description="All students have cleared their fees!" /> : (
@@ -301,12 +354,21 @@ export default function FinanceReportsPage() {
                 <span className="text-sm text-gray-500">Total Expenses:</span>
                 <span className="text-xl font-bold text-red-600">{fmt(expData?.totalAmount)}</span>
               </div>
-              <button
-                onClick={() => exportCSV((expData?.data || []).map(e => ({ Date: fmtDate(e.date), Category: e.category, Vendor: e.vendor || '', Amount: e.amount, Method: e.paymentMethod, AddedBy: e.addedBy?.name })), 'expenses.csv')}
-                className="btn-secondary flex items-center gap-2 text-sm"
-              >
-                <Download className="w-4 h-4" /> Export CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => exportCSV((expData?.data || []).map(e => ({ Date: fmtDate(e.date), Category: e.category, Vendor: e.vendor || '', Amount: e.amount, Method: e.paymentMethod, AddedBy: e.addedBy?.name })), 'expenses.csv')}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  <Download className="w-4 h-4" /> Export CSV
+                </button>
+                <button
+                  disabled={exporting}
+                  onClick={() => exportExcel(`/finance/reports/expense-excel?from=${from}&to=${to}${filterCat ? `&category=${filterCat}` : ''}`, `FutureOptima_Expenses_${from}_to_${to}.xlsx`)}
+                  className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 transition-colors disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="w-4 h-4" /> {exporting ? 'Downloading...' : 'Export Expenses'}
+                </button>
+              </div>
             </div>
             {(expData?.byCategory || []).length > 0 && (
               <div className="card">
@@ -355,10 +417,19 @@ export default function FinanceReportsPage() {
       {tab === 'salary' && (
         salLoading ? <LoadingState text="Loading salary records..." /> : (
           <div className="space-y-4">
-            <div className="card inline-flex items-center gap-3 py-3 px-4">
-              <span className="text-sm text-gray-500">Total Payroll:</span>
-              <span className="text-xl font-bold text-blue-600">{fmt(salData?.totalPayroll)}</span>
-              <span className="text-sm text-gray-400">({(salData?.data || []).length} records)</span>
+            <div className="flex items-center justify-between">
+              <div className="card inline-flex items-center gap-3 py-3 px-4">
+                <span className="text-sm text-gray-500">Total Payroll:</span>
+                <span className="text-xl font-bold text-blue-600">{fmt(salData?.totalPayroll)}</span>
+                <span className="text-sm text-gray-400">({(salData?.data || []).length} records)</span>
+              </div>
+              <button
+                disabled={exporting}
+                onClick={() => exportExcel(`/finance/reports/salary-excel?month=${filterMonth}&year=${filterYear}`, `FutureOptima_Salary_${MONTHS[filterMonth - 1]}_${filterYear}.xlsx`)}
+                className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 transition-colors disabled:opacity-50"
+              >
+                <FileSpreadsheet className="w-4 h-4" /> {exporting ? 'Downloading...' : 'Export Salary Sheet'}
+              </button>
             </div>
             <div className="card p-0 overflow-hidden">
               {(salData?.data || []).length === 0 ? <EmptyState title="No salary records for this period" /> : (

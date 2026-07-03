@@ -6,6 +6,7 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { newWorkbook, addTableSheet, addTotalsRow, sendWorkbook, INR_FORMAT } from '../utils/excelExport.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const slipsDir = path.join(__dirname, '../../uploads/salary-slips');
@@ -316,6 +317,427 @@ router.get('/reports/pending-fees', async (req, res) => {
 
     const total = data.reduce((s, r) => s + r.balance, 0);
     res.json({ data, totalPending: total });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+const EXPENSE_CATEGORY_ORDER = ['Marketing', 'Rent', 'Electricity', 'Internet', 'Salary', 'Software', 'Office', 'Travel', 'Miscellaneous'];
+
+function monthOverlapsRange(year, month, from, to) {
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+  if (from && monthEnd < from) return false;
+  if (to && monthStart > to) return false;
+  return true;
+}
+
+// GET /api/finance/reports/pl-excel
+router.get('/reports/pl-excel', async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const fromDate = from ? new Date(from) : null;
+    const toDate = to ? new Date(to + 'T23:59:59') : null;
+    const paidAtWhere = {};
+    if (fromDate) paidAtWhere.gte = fromDate;
+    if (toDate) paidAtWhere.lte = toDate;
+    const dateWhere = {};
+    if (fromDate) dateWhere.gte = fromDate;
+    if (toDate) dateWhere.lte = toDate;
+
+    const [payments, expenses, expenseByCategory, incomeAgg, expenseAgg, salaryRecords] = await Promise.all([
+      prisma.payment.findMany({
+        where: (from || to) ? { paidAt: paidAtWhere } : {},
+        orderBy: { paidAt: 'asc' },
+        include: {
+          enrollment: {
+            include: {
+              lead: { select: { name: true, phone: true } },
+              course: { select: { name: true, shortName: true } },
+              batch: { select: { batchName: true } },
+            },
+          },
+          collectedBy: { select: { name: true } },
+        },
+      }),
+      prisma.expense.findMany({
+        where: (from || to) ? { date: dateWhere } : {},
+        orderBy: { date: 'asc' },
+        include: { addedBy: { select: { name: true } } },
+      }),
+      prisma.expense.groupBy({ by: ['category'], where: (from || to) ? { date: dateWhere } : {}, _sum: { amount: true } }),
+      prisma.payment.aggregate({ where: (from || to) ? { paidAt: paidAtWhere } : {}, _sum: { amount: true } }),
+      prisma.expense.aggregate({ where: (from || to) ? { date: dateWhere } : {}, _sum: { amount: true } }),
+      prisma.salaryRecord.findMany({ orderBy: [{ year: 'asc' }, { month: 'asc' }] }),
+    ]);
+
+    const totalIncome = incomeAgg._sum.amount || 0;
+    const totalExpenses = expenseAgg._sum.amount || 0;
+    const netProfit = totalIncome - totalExpenses;
+
+    const catMap = {};
+    expenseByCategory.forEach(c => { catMap[c.category] = c._sum.amount || 0; });
+    const extraCategories = Object.keys(catMap).filter(c => !EXPENSE_CATEGORY_ORDER.includes(c)).sort();
+    const orderedCategories = [...EXPENSE_CATEGORY_ORDER, ...extraCategories];
+
+    const periodSalary = salaryRecords.filter(r => monthOverlapsRange(r.year, r.month, fromDate, toDate));
+
+    const wb = newWorkbook();
+
+    // SHEET 1 - Summary
+    const summary = wb.addWorksheet('Summary');
+    summary.columns = [{ width: 32 }, { width: 22 }];
+    let r = 1;
+    summary.mergeCells(`A${r}:B${r}`);
+    summary.getCell(`A${r}`).value = 'Future Optima IT Solutions';
+    summary.getCell(`A${r}`).font = { bold: true, size: 16, color: { argb: 'FF1B2B6B' } };
+    summary.getCell(`A${r}`).alignment = { horizontal: 'center' };
+    r++;
+    summary.mergeCells(`A${r}:B${r}`);
+    summary.getCell(`A${r}`).value = 'Profit & Loss Report';
+    summary.getCell(`A${r}`).font = { bold: true, size: 12, color: { argb: 'FFF59E0B' } };
+    summary.getCell(`A${r}`).alignment = { horizontal: 'center' };
+    r++;
+    summary.mergeCells(`A${r}:B${r}`);
+    summary.getCell(`A${r}`).value = `Period: From ${from || '—'} To ${to || '—'}`;
+    summary.getCell(`A${r}`).alignment = { horizontal: 'center' };
+    r++;
+    summary.mergeCells(`A${r}:B${r}`);
+    summary.getCell(`A${r}`).value = `Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}`;
+    summary.getCell(`A${r}`).alignment = { horizontal: 'center' };
+    r += 2;
+
+    const sectionHeader = (label) => {
+      summary.mergeCells(`A${r}:B${r}`);
+      const cell = summary.getCell(`A${r}`);
+      cell.value = label;
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B2B6B' } };
+      r++;
+    };
+    const dataRow = (label, amount, bold = false) => {
+      summary.getCell(`A${r}`).value = label;
+      summary.getCell(`B${r}`).value = amount;
+      summary.getCell(`B${r}`).numFmt = INR_FORMAT;
+      if (bold) { summary.getCell(`A${r}`).font = { bold: true }; summary.getCell(`B${r}`).font = { bold: true }; }
+      r++;
+    };
+
+    sectionHeader('INCOME');
+    dataRow('Fee Collections', totalIncome);
+    dataRow('Total Income', totalIncome, true);
+    r++;
+
+    sectionHeader('EXPENSES BY CATEGORY');
+    orderedCategories.forEach(cat => dataRow(cat, catMap[cat] || 0));
+    dataRow('Total Expenses', totalExpenses, true);
+    r++;
+
+    summary.mergeCells(`A${r}:B${r}`);
+    const npCell = summary.getCell(`A${r}`);
+    npCell.value = `NET PROFIT/LOSS: ₹${netProfit.toLocaleString('en-IN')}`;
+    npCell.font = { bold: true, size: 13, color: { argb: netProfit >= 0 ? 'FF15803D' : 'FFB91C1C' } };
+    npCell.alignment = { horizontal: 'center' };
+
+    // SHEET 2 - All Payments (Income Detail)
+    addTableSheet(wb, 'Payments', [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Receipt No', key: 'receiptNo', width: 20 },
+      { header: 'Student Name', key: 'studentName', width: 22 },
+      { header: 'Student Phone', key: 'studentPhone', width: 16, text: true },
+      { header: 'Course', key: 'course', width: 22 },
+      { header: 'Batch', key: 'batch', width: 16 },
+      { header: 'Amount', key: 'amount', width: 16, money: true },
+      { header: 'Payment Method', key: 'method', width: 16 },
+      { header: 'Transaction ID', key: 'txnId', width: 20 },
+      { header: 'Collected By', key: 'collectedBy', width: 18 },
+      { header: 'Enrollment Date', key: 'enrolledAt', width: 16 },
+    ], payments.map(p => ({
+      date: p.paidAt ? new Date(p.paidAt).toLocaleDateString('en-IN') : '',
+      receiptNo: p.receiptNumber,
+      studentName: p.enrollment?.lead?.name || '',
+      studentPhone: p.enrollment?.lead?.phone || '',
+      course: p.enrollment?.course?.name || '',
+      batch: p.enrollment?.batch?.batchName || '',
+      amount: p.amount,
+      method: p.method,
+      txnId: p.transactionId || '',
+      collectedBy: p.collectedBy?.name || '',
+      enrolledAt: p.enrollment?.enrolledAt ? new Date(p.enrollment.enrolledAt).toLocaleDateString('en-IN') : '',
+    })));
+
+    // SHEET 3 - All Expenses
+    addTableSheet(wb, 'Expenses', [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Category', key: 'category', width: 16 },
+      { header: 'Vendor', key: 'vendor', width: 20 },
+      { header: 'Amount', key: 'amount', width: 16, money: true },
+      { header: 'Payment Method', key: 'method', width: 16 },
+      { header: 'Notes', key: 'notes', width: 26 },
+      { header: 'Added By', key: 'addedBy', width: 18 },
+    ], expenses.map(e => ({
+      date: e.date ? new Date(e.date).toLocaleDateString('en-IN') : '',
+      category: e.category,
+      vendor: e.vendor || '',
+      amount: e.amount,
+      method: e.paymentMethod,
+      notes: e.notes || '',
+      addedBy: e.addedBy?.name || '',
+    })));
+
+    // SHEET 4 - Salary Records
+    addTableSheet(wb, 'Salary', [
+      { header: 'Employee Name', key: 'employeeName', width: 22 },
+      { header: 'Designation', key: 'designation', width: 18 },
+      { header: 'Department', key: 'department', width: 18 },
+      { header: 'Basic Salary', key: 'basicSalary', width: 16, money: true },
+      { header: 'Bonus', key: 'bonus', width: 14, money: true },
+      { header: 'Deductions', key: 'deductions', width: 14, money: true },
+      { header: 'Net Salary', key: 'netSalary', width: 16, money: true },
+      { header: 'Payment Method', key: 'paymentMethod', width: 16 },
+      { header: 'Payment Date', key: 'paymentDate', width: 16 },
+      { header: 'Status', key: 'status', width: 12 },
+    ], periodSalary.map(s => ({
+      employeeName: s.employeeName,
+      designation: s.designation || '',
+      department: s.department || '',
+      basicSalary: s.basicSalary,
+      bonus: s.bonus,
+      deductions: s.deductions,
+      netSalary: s.netSalary,
+      paymentMethod: s.paymentMethod || '',
+      paymentDate: s.paymentDate ? new Date(s.paymentDate).toLocaleDateString('en-IN') : '',
+      status: s.paymentStatus,
+    })));
+
+    await sendWorkbook(res, wb, 'FutureOptima_PL_Report.xlsx');
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/finance/reports/collection-excel
+router.get('/reports/collection-excel', async (req, res) => {
+  try {
+    const { from, to, courseId, counselorId } = req.query;
+    const where = {};
+    if (from || to) {
+      where.paidAt = {};
+      if (from) where.paidAt.gte = new Date(from);
+      if (to) where.paidAt.lte = new Date(to + 'T23:59:59');
+    }
+    if (courseId) where.enrollment = { courseId };
+    if (counselorId) where.enrollment = { ...(where.enrollment || {}), lead: { assignedToId: counselorId } };
+
+    const payments = await prisma.payment.findMany({
+      where,
+      orderBy: { paidAt: 'desc' },
+      include: {
+        enrollment: {
+          include: {
+            lead: { select: { name: true, phone: true, email: true, assignedTo: { select: { name: true } } } },
+            course: { select: { name: true, shortName: true } },
+            batch: { select: { batchName: true } },
+          },
+        },
+        collectedBy: { select: { name: true } },
+      },
+    });
+
+    const wb = newWorkbook();
+    addTableSheet(wb, 'Collections', [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Receipt No', key: 'receiptNo', width: 20 },
+      { header: 'Student Name', key: 'studentName', width: 22 },
+      { header: 'Student Phone', key: 'studentPhone', width: 16, text: true },
+      { header: 'Student Email', key: 'studentEmail', width: 24 },
+      { header: 'Course', key: 'course', width: 22 },
+      { header: 'Batch', key: 'batch', width: 16 },
+      { header: 'Total Fee', key: 'totalFee', width: 16, money: true },
+      { header: 'Amount Paid This', key: 'amountPaid', width: 18, money: true },
+      { header: 'Total Paid', key: 'totalPaid', width: 16, money: true },
+      { header: 'Balance Due', key: 'balanceDue', width: 16, money: true },
+      { header: 'Payment Method', key: 'method', width: 16 },
+      { header: 'Transaction ID', key: 'txnId', width: 20 },
+      { header: 'Collected By', key: 'collectedBy', width: 18 },
+      { header: 'Counselor Name', key: 'counselor', width: 18 },
+      { header: 'Enrollment Date', key: 'enrolledAt', width: 16 },
+    ], payments.map(p => ({
+      date: p.paidAt ? new Date(p.paidAt).toLocaleDateString('en-IN') : '',
+      receiptNo: p.receiptNumber,
+      studentName: p.enrollment?.lead?.name || '',
+      studentPhone: p.enrollment?.lead?.phone || '',
+      studentEmail: p.enrollment?.lead?.email || '',
+      course: p.enrollment?.course?.name || '',
+      batch: p.enrollment?.batch?.batchName || '',
+      totalFee: p.enrollment?.netFee || 0,
+      amountPaid: p.amount,
+      totalPaid: p.enrollment?.paidAmount || 0,
+      balanceDue: p.enrollment?.balanceDue || 0,
+      method: p.method,
+      txnId: p.transactionId || '',
+      collectedBy: p.collectedBy?.name || '',
+      counselor: p.enrollment?.lead?.assignedTo?.name || '',
+      enrolledAt: p.enrollment?.enrolledAt ? new Date(p.enrollment.enrolledAt).toLocaleDateString('en-IN') : '',
+    })));
+
+    await sendWorkbook(res, wb, 'FutureOptima_Collection_Report.xlsx');
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/finance/reports/pending-excel
+router.get('/reports/pending-excel', async (req, res) => {
+  try {
+    const enrollments = await prisma.enrollment.findMany({
+      where: { balanceDue: { gt: 0 } },
+      orderBy: { balanceDue: 'desc' },
+      include: {
+        lead: { select: { name: true, phone: true, email: true, nextFollowUpAt: true, assignedTo: { select: { name: true } } } },
+        course: { select: { name: true, shortName: true } },
+        batch: { select: { batchName: true } },
+        installments: { where: { status: 'OVERDUE' } },
+        payments: { orderBy: { paidAt: 'desc' }, take: 1 },
+      },
+    });
+
+    const wb = newWorkbook();
+    addTableSheet(wb, 'Pending Fees', [
+      { header: 'Student Name', key: 'studentName', width: 22 },
+      { header: 'Student Phone', key: 'studentPhone', width: 16, text: true },
+      { header: 'Student Email', key: 'studentEmail', width: 24 },
+      { header: 'Course', key: 'course', width: 22 },
+      { header: 'Batch', key: 'batch', width: 16 },
+      { header: 'Enrollment Date', key: 'enrolledAt', width: 16 },
+      { header: 'Total Fee', key: 'totalFee', width: 16, money: true },
+      { header: 'Total Paid', key: 'totalPaid', width: 16, money: true },
+      { header: 'Balance Due', key: 'balanceDue', width: 16, money: true },
+      { header: 'Overdue Installments', key: 'overdue', width: 18 },
+      { header: 'Last Payment Date', key: 'lastPayment', width: 16 },
+      { header: 'Counselor', key: 'counselor', width: 18 },
+      { header: 'Next Follow Up', key: 'nextFollowUp', width: 16 },
+    ], enrollments.map(e => ({
+      studentName: e.lead?.name || '',
+      studentPhone: e.lead?.phone || '',
+      studentEmail: e.lead?.email || '',
+      course: e.course?.name || '',
+      batch: e.batch?.batchName || '',
+      enrolledAt: e.enrolledAt ? new Date(e.enrolledAt).toLocaleDateString('en-IN') : '',
+      totalFee: e.netFee,
+      totalPaid: e.paidAmount,
+      balanceDue: e.balanceDue,
+      overdue: e.installments.length,
+      lastPayment: e.payments[0]?.paidAt ? new Date(e.payments[0].paidAt).toLocaleDateString('en-IN') : '',
+      counselor: e.lead?.assignedTo?.name || '',
+      nextFollowUp: e.lead?.nextFollowUpAt ? new Date(e.lead.nextFollowUpAt).toLocaleDateString('en-IN') : '',
+    })));
+
+    await sendWorkbook(res, wb, 'FutureOptima_Pending_Fees.xlsx');
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/finance/reports/expense-excel
+router.get('/reports/expense-excel', async (req, res) => {
+  try {
+    const { from, to, category } = req.query;
+    const where = {};
+    if (from || to) {
+      where.date = {};
+      if (from) where.date.gte = new Date(from);
+      if (to) where.date.lte = new Date(to + 'T23:59:59');
+    }
+    if (category) where.category = category;
+
+    const [expenses, byCategory] = await Promise.all([
+      prisma.expense.findMany({ where, orderBy: { date: 'desc' }, include: { addedBy: { select: { name: true } } } }),
+      prisma.expense.groupBy({ by: ['category'], where, _sum: { amount: true }, _count: { id: true } }),
+    ]);
+
+    const wb = newWorkbook();
+    addTableSheet(wb, 'Expenses', [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Category', key: 'category', width: 16 },
+      { header: 'Sub Category', key: 'subCategory', width: 16 },
+      { header: 'Vendor', key: 'vendor', width: 20 },
+      { header: 'Amount', key: 'amount', width: 16, money: true },
+      { header: 'Payment Method', key: 'method', width: 16 },
+      { header: 'Notes', key: 'notes', width: 26 },
+      { header: 'Added By', key: 'addedBy', width: 18 },
+      { header: 'Created At', key: 'createdAt', width: 16 },
+    ], expenses.map(e => ({
+      date: e.date ? new Date(e.date).toLocaleDateString('en-IN') : '',
+      category: e.category,
+      subCategory: '',
+      vendor: e.vendor || '',
+      amount: e.amount,
+      method: e.paymentMethod,
+      notes: e.notes || '',
+      addedBy: e.addedBy?.name || '',
+      createdAt: e.createdAt ? new Date(e.createdAt).toLocaleDateString('en-IN') : '',
+    })));
+
+    addTableSheet(wb, 'Category Summary', [
+      { header: 'Category', key: 'category', width: 20 },
+      { header: 'Total Amount', key: 'total', width: 18, money: true },
+      { header: 'Transaction Count', key: 'count', width: 18 },
+    ], byCategory.map(c => ({
+      category: c.category,
+      total: c._sum.amount || 0,
+      count: c._count.id,
+    })));
+
+    await sendWorkbook(res, wb, 'FutureOptima_Expense_Report.xlsx');
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/finance/reports/salary-excel
+router.get('/reports/salary-excel', async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const where = {};
+    if (month) where.month = parseInt(month);
+    if (year) where.year = parseInt(year);
+
+    const records = await prisma.salaryRecord.findMany({ where, orderBy: [{ year: 'desc' }, { month: 'desc' }, { employeeName: 'asc' }] });
+
+    const columns = [
+      { header: 'Employee Name', key: 'employeeName', width: 22 },
+      { header: 'Designation', key: 'designation', width: 18 },
+      { header: 'Department', key: 'department', width: 18 },
+      { header: 'Is External', key: 'isExternal', width: 12 },
+      { header: 'Basic Salary', key: 'basicSalary', width: 16, money: true },
+      { header: 'Bonus', key: 'bonus', width: 14, money: true },
+      { header: 'Deductions', key: 'deductions', width: 14, money: true },
+      { header: 'Net Salary', key: 'netSalary', width: 16, money: true },
+      { header: 'Payment Status', key: 'paymentStatus', width: 14 },
+      { header: 'Payment Method', key: 'paymentMethod', width: 16 },
+      { header: 'Payment Date', key: 'paymentDate', width: 16 },
+      { header: 'Notes', key: 'notes', width: 24 },
+    ];
+
+    const wb = newWorkbook();
+    const sheet = addTableSheet(wb, 'Salary', columns, records.map(r => ({
+      employeeName: r.employeeName,
+      designation: r.designation || '',
+      department: r.department || '',
+      isExternal: r.isExternalEmployee ? 'Yes' : 'No',
+      basicSalary: r.basicSalary,
+      bonus: r.bonus,
+      deductions: r.deductions,
+      netSalary: r.netSalary,
+      paymentStatus: r.paymentStatus,
+      paymentMethod: r.paymentMethod || '',
+      paymentDate: r.paymentDate ? new Date(r.paymentDate).toLocaleDateString('en-IN') : '',
+      notes: r.notes || '',
+    })));
+
+    const totals = {
+      employeeName: 'TOTAL',
+      designation: '', department: '', isExternal: '',
+      basicSalary: records.reduce((s, r) => s + r.basicSalary, 0),
+      bonus: records.reduce((s, r) => s + r.bonus, 0),
+      deductions: records.reduce((s, r) => s + r.deductions, 0),
+      netSalary: records.reduce((s, r) => s + r.netSalary, 0),
+      paymentStatus: '', paymentMethod: '', paymentDate: '', notes: '',
+    };
+    addTotalsRow(sheet, columns, totals);
+
+    await sendWorkbook(res, wb, 'FutureOptima_Salary_Report.xlsx');
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
