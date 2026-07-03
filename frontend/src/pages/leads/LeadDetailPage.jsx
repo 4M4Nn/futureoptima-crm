@@ -177,14 +177,54 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
 
         <div>
           <label className="label">Batch (optional)</label>
-          <select className="input" value={batchId} onChange={e => setBatchId(e.target.value)} disabled={!courseId}>
-            <option value="">{courseId ? (batches?.length ? 'Select batch...' : 'No active batches') : 'Select a course first'}</option>
-            {(batches || []).map(b => (
-              <option key={b.id} value={b.id}>
-                {b.batchName} · {b.mode} · {b.timings} · starts {b.startDate ? new Date(b.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-              </option>
-            ))}
-          </select>
+          {!courseId ? (
+            <p className="text-sm text-gray-400">Select a course first</p>
+          ) : !batches?.length ? (
+            <p className="text-sm text-gray-400">No active batches for this course</p>
+          ) : (
+            <div className="space-y-2">
+              {(batches || []).map(b => {
+                const remaining = Math.max(0, (b.capacity || 0) - (b._count?.enrollments || 0));
+                const selected = batchId === b.id;
+                const modeColors = { ONLINE: 'bg-blue-100 text-blue-700', OFFLINE: 'bg-green-100 text-green-700', HYBRID: 'bg-purple-100 text-purple-700' };
+                return (
+                  <button
+                    type="button"
+                    key={b.id}
+                    onClick={() => setBatchId(selected ? '' : b.id)}
+                    className={`w-full text-left p-3 rounded-xl border-2 transition-all ${selected ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'}`}
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-semibold text-sm text-gray-900">{b.batchName}</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${modeColors[b.mode] || 'bg-gray-100 text-gray-700'}`}>{b.mode}</span>
+                        {b.isCombined && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">🔗 Combined</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Starts {b.startDate ? new Date(b.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} · {b.timings}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {remaining > 0 ? `${remaining} seats remaining` : 'Batch full'} · Capacity {b.capacity}
+                    </div>
+                    {b.isCombined && (
+                      <div className="mt-2 bg-purple-50 border border-purple-100 rounded-lg px-2.5 py-1.5">
+                        <div className="text-xs text-purple-700">
+                          Shared with: {(b.combinedCourseDetails || []).map(c => c.name).join(', ') || '—'}
+                          {b.splitAfterMonths ? ` (first ${b.splitAfterMonths} month${b.splitAfterMonths > 1 ? 's' : ''})` : ''}
+                        </div>
+                        {b.splitDate && (
+                          <div className="text-xs text-purple-600 mt-0.5">Splits into separate batches on {new Date(b.splitDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, Users, Clock, DollarSign, Plus, Edit2, Calendar, MapPin, UserCheck, ToggleLeft, ToggleRight } from 'lucide-react';
+import { BookOpen, Users, Clock, DollarSign, Plus, Edit2, Calendar, MapPin, UserCheck, ToggleLeft, ToggleRight, Link2, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -25,7 +25,10 @@ const MODES = ['ONLINE', 'OFFLINE', 'HYBRID'];
 const MODE_COLORS = { ONLINE: 'bg-blue-100 text-blue-700', OFFLINE: 'bg-green-100 text-green-700', HYBRID: 'bg-purple-100 text-purple-700' };
 
 const EMPTY_COURSE = { courseId: '', name: '', shortName: '', duration: '', totalHours: '', fees: '', emiAvailable: true, maxInstallments: 6, highlights: [] };
-const EMPTY_BATCH = { courseId: '', batchName: '', mode: 'OFFLINE', startDate: '', endDate: '', timings: '', capacity: '30', venue: '', facultyName: '' };
+const EMPTY_BATCH = {
+  courseId: '', batchName: '', mode: 'OFFLINE', startDate: '', endDate: '', timings: '', capacity: '30', venue: '', facultyName: '',
+  isCombined: false, combinedCourseIds: [], splitAfterMonths: '', splitDate: '', combinedBatchNote: '',
+};
 
 export default function CoursesPage() {
   const { user } = useAuthStore();
@@ -38,6 +41,10 @@ export default function CoursesPage() {
   const [courseForm, setCourseForm] = useState(EMPTY_COURSE);
   const [batchForm, setBatchForm] = useState(EMPTY_BATCH);
   const [highlightInput, setHighlightInput] = useState('');
+  const [batchNameTouched, setBatchNameTouched] = useState(false);
+  const [splitDateTouched, setSplitDateTouched] = useState(false);
+  const [batchTypeFilter, setBatchTypeFilter] = useState('all');
+  const [expandedBatchId, setExpandedBatchId] = useState(null);
 
   const { data: courses, isLoading: coursesLoading } = useQuery({
     queryKey: ['courses-full'],
@@ -96,9 +103,61 @@ export default function CoursesPage() {
       capacity: String(batch.capacity),
       venue: batch.venue || '',
       facultyName: batch.facultyName || '',
+      isCombined: !!batch.isCombined,
+      combinedCourseIds: batch.combinedCourseIds || [],
+      splitAfterMonths: batch.splitAfterMonths != null ? String(batch.splitAfterMonths) : '',
+      splitDate: batch.splitDate?.slice(0, 10) || '',
+      combinedBatchNote: batch.combinedBatchNote || '',
     });
+    setBatchNameTouched(true);
+    setSplitDateTouched(true);
     setShowBatchModal(true);
   };
+
+  const toggleAdditionalCourse = (courseEnumId) => {
+    setBatchForm(f => ({
+      ...f,
+      combinedCourseIds: f.combinedCourseIds.includes(courseEnumId)
+        ? f.combinedCourseIds.filter(c => c !== courseEnumId)
+        : [...f.combinedCourseIds, courseEnumId],
+    }));
+  };
+
+  const setBatchType = (isCombined) => {
+    setBatchForm(f => ({ ...EMPTY_BATCH, batchName: '', mode: f.mode }));
+    setBatchNameTouched(false);
+    setSplitDateTouched(false);
+    setBatchForm(f => ({ ...f, isCombined }));
+  };
+
+  // Auto-suggest batch name from selected course(s), unless the user has typed their own
+  useEffect(() => {
+    if (batchNameTouched) return;
+    const primary = (courses || []).find(c => c.id === batchForm.courseId);
+    if (!primary) return;
+    if (!batchForm.isCombined) {
+      const count = (batches || []).filter(b => b.courseId === batchForm.courseId).length + 1;
+      setBatchForm(f => ({ ...f, batchName: `${primary.shortName} Batch ${count}` }));
+    } else {
+      if (!batchForm.combinedCourseIds.length) return;
+      const additionalNames = batchForm.combinedCourseIds
+        .map(cid => (courses || []).find(c => c.courseId === cid)?.shortName)
+        .filter(Boolean);
+      const count = (batches || []).filter(b => b.isCombined && b.courseId === batchForm.courseId).length + 1;
+      setBatchForm(f => ({ ...f, batchName: `${[primary.shortName, ...additionalNames].join(' + ')} Combined Batch ${count}` }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchForm.courseId, batchForm.combinedCourseIds, batchForm.isCombined, batchNameTouched, courses, batches]);
+
+  // Auto-calculate split date from start date + combined months, unless manually overridden
+  useEffect(() => {
+    if (!batchForm.isCombined || splitDateTouched) return;
+    if (!batchForm.startDate || !batchForm.splitAfterMonths) return;
+    const d = new Date(batchForm.startDate);
+    d.setMonth(d.getMonth() + parseInt(batchForm.splitAfterMonths));
+    setBatchForm(f => ({ ...f, splitDate: d.toISOString().slice(0, 10) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchForm.startDate, batchForm.splitAfterMonths, batchForm.isCombined, splitDateTouched]);
 
   const addHighlight = () => {
     if (!highlightInput.trim()) return;
@@ -117,7 +176,16 @@ export default function CoursesPage() {
     if (!batchForm.courseId || !batchForm.batchName || !batchForm.startDate || !batchForm.timings) {
       toast.error('Fill all required fields'); return;
     }
-    batchMutation.mutate({ ...batchForm, capacity: parseInt(batchForm.capacity) || 30 });
+    if (batchForm.isCombined && !batchForm.combinedCourseIds.length) {
+      toast.error('Select at least one additional course for a combined batch'); return;
+    }
+    batchMutation.mutate({
+      ...batchForm,
+      capacity: parseInt(batchForm.capacity) || 30,
+      splitAfterMonths: batchForm.isCombined && batchForm.splitAfterMonths ? parseInt(batchForm.splitAfterMonths) : undefined,
+      splitDate: batchForm.isCombined && batchForm.splitDate ? batchForm.splitDate : undefined,
+      combinedCourseIds: batchForm.isCombined ? batchForm.combinedCourseIds : [],
+    });
   };
 
   return (
@@ -130,7 +198,7 @@ export default function CoursesPage() {
         </div>
         {isAdmin && (
           <button
-            onClick={() => tab === 'courses' ? setShowCourseModal(true) : (setBatchForm(EMPTY_BATCH), setEditBatch(null), setShowBatchModal(true))}
+            onClick={() => tab === 'courses' ? setShowCourseModal(true) : (setBatchForm(EMPTY_BATCH), setEditBatch(null), setBatchNameTouched(false), setSplitDateTouched(false), setShowBatchModal(true))}
             className="btn-primary flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
@@ -202,59 +270,122 @@ export default function CoursesPage() {
       {/* Batches Tab */}
       {tab === 'batches' && (
         batchesLoading ? <LoadingState text="Loading batches..." /> : (
-          <div className="card p-0 overflow-hidden">
-            {!batches?.length ? (
-              <EmptyState title="No batches yet" description="Create the first batch to start scheduling classes." />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      {['Batch Name', 'Course', 'Mode', 'Start Date', 'Timings', 'Capacity', 'Faculty', 'Students', 'Status', 'Actions'].map(h => (
-                        <th key={h} className="text-left text-xs font-medium text-gray-500 px-4 py-3">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {(batches || []).map(batch => (
-                      <motion.tr key={batch.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-semibold text-gray-900">{batch.batchName}</td>
-                        <td className="px-4 py-3 text-gray-600">{batch.course?.shortName}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${MODE_COLORS[batch.mode] || 'bg-gray-100 text-gray-700'}`}>{batch.mode}</span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">{fmtDate(batch.startDate)}</td>
-                        <td className="px-4 py-3 text-gray-600">{batch.timings}</td>
-                        <td className="px-4 py-3 text-gray-600">{batch.capacity}</td>
-                        <td className="px-4 py-3 text-gray-500">{batch.facultyName || '—'}</td>
-                        <td className="px-4 py-3 text-gray-600">
-                          <Link to={`/students?batchId=${batch.id}`} className="text-primary-600 hover:underline text-xs font-medium">
-                            {batch._count?.enrollments || 0} students
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${batch.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                            {batch.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {isAdmin && (
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => openEditBatch(batch)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Edit">
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button onClick={() => toggleBatchActive(batch)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="Toggle Active">
-                                {batch.isActive ? <ToggleRight className="w-3.5 h-3.5 text-green-600" /> : <ToggleLeft className="w-3.5 h-3.5 text-gray-400" />}
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </motion.tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+          <div className="space-y-3">
+            {/* Type filter */}
+            <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+              {[{ id: 'all', label: 'Show All' }, { id: 'single', label: 'Single Only' }, { id: 'combined', label: 'Combined Only' }].map(f => (
+                <button key={f.id} onClick={() => setBatchTypeFilter(f.id)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${batchTypeFilter === f.id ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="card p-0 overflow-hidden">
+              {(() => {
+                const filteredBatches = (batches || []).filter(b => batchTypeFilter === 'all' ? true : batchTypeFilter === 'combined' ? b.isCombined : !b.isCombined);
+                if (!filteredBatches.length) {
+                  return <EmptyState title="No batches found" description="Create a batch or adjust the filter above." />;
+                }
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                          {['Batch Name', 'Course', 'Type', 'Mode', 'Start Date', 'Timings', 'Capacity', 'Faculty', 'Students', 'Status', 'Actions'].map(h => (
+                            <th key={h} className="text-left text-xs font-medium text-gray-500 px-4 py-3">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {filteredBatches.map(batch => {
+                          const combinedCount = 1 + (batch.combinedCourseIds?.length || 0);
+                          const isExpanded = expandedBatchId === batch.id;
+                          return (
+                            <Fragment key={batch.id}>
+                              <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 font-semibold text-gray-900">{batch.batchName}</td>
+                                <td className="px-4 py-3 text-gray-600">{batch.course?.shortName}</td>
+                                <td className="px-4 py-3">
+                                  {batch.isCombined ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedBatchId(isExpanded ? null : batch.id)}
+                                      title="Click to see combined course details"
+                                      className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
+                                    >
+                                      <Link2 className="w-3 h-3" /> Combined ({combinedCount}) {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                    </button>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">Single</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${MODE_COLORS[batch.mode] || 'bg-gray-100 text-gray-700'}`}>{batch.mode}</span>
+                                </td>
+                                <td className="px-4 py-3 text-gray-600">{fmtDate(batch.startDate)}</td>
+                                <td className="px-4 py-3 text-gray-600">{batch.timings}</td>
+                                <td className="px-4 py-3 text-gray-600">{batch.capacity}</td>
+                                <td className="px-4 py-3 text-gray-500">{batch.facultyName || '—'}</td>
+                                <td className="px-4 py-3 text-gray-600">
+                                  <Link to={`/students?batchId=${batch.id}`} className="text-primary-600 hover:underline text-xs font-medium">
+                                    {batch._count?.enrollments || 0} students
+                                  </Link>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${batch.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {batch.isActive ? 'Active' : 'Inactive'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  {isAdmin && (
+                                    <div className="flex items-center gap-2">
+                                      <button onClick={() => openEditBatch(batch)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Edit">
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button onClick={() => toggleBatchActive(batch)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="Toggle Active">
+                                        {batch.isActive ? <ToggleRight className="w-3.5 h-3.5 text-green-600" /> : <ToggleLeft className="w-3.5 h-3.5 text-gray-400" />}
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </motion.tr>
+                              {batch.isCombined && isExpanded && (
+                                <tr key={`${batch.id}-expand`}>
+                                  <td colSpan={11} className="px-4 py-4 bg-purple-50/60 border-b border-purple-100">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                                      <div>
+                                        <div className="font-semibold text-gray-700 mb-1">Primary Course</div>
+                                        <div className="text-gray-600">✅ {batch.course?.name || batch.course?.shortName}</div>
+                                      </div>
+                                      <div>
+                                        <div className="font-semibold text-gray-700 mb-1">Additional Courses</div>
+                                        {(batch.combinedCourseDetails || []).map(c => (
+                                          <div key={c.courseId} className="text-gray-600">✅ {c.name}</div>
+                                        ))}
+                                        {!(batch.combinedCourseDetails || []).length && <div className="text-gray-400">—</div>}
+                                      </div>
+                                      <div>
+                                        <div className="font-semibold text-gray-700 mb-1">Split Date</div>
+                                        <div className="text-gray-600">{batch.splitDate ? fmtDate(batch.splitDate) : '—'} {batch.splitAfterMonths ? `(after ${batch.splitAfterMonths} months)` : ''}</div>
+                                      </div>
+                                      <div>
+                                        <div className="font-semibold text-gray-700 mb-1">Combined Note</div>
+                                        <div className="text-gray-600 whitespace-pre-line">{batch.combinedBatchNote || '—'}</div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         )
       )}
@@ -329,19 +460,119 @@ export default function CoursesPage() {
       </Modal>
 
       {/* Add / Edit Batch Modal */}
-      <Modal open={showBatchModal} onClose={() => { setShowBatchModal(false); setEditBatch(null); setBatchForm(EMPTY_BATCH); }} title={editBatch ? 'Edit Batch' : 'Add New Batch'} size="lg">
-        <form onSubmit={submitBatch} className="p-5 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label">Batch Name *</label>
-              <input value={batchForm.batchName} onChange={e => setBatchForm(f => ({ ...f, batchName: e.target.value }))} className="input" required placeholder="e.g. AI Batch 12" />
+      <Modal open={showBatchModal} onClose={() => { setShowBatchModal(false); setEditBatch(null); setBatchForm(EMPTY_BATCH); setBatchNameTouched(false); setSplitDateTouched(false); }} title={editBatch ? 'Edit Batch' : 'Add New Batch'} size="xl">
+        <form onSubmit={submitBatch} className="p-5 space-y-5">
+          {/* STEP 1 - Batch Type Selection */}
+          <div>
+            <label className="label">Batch Type *</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setBatchType(false)}
+                className={`text-left p-4 rounded-2xl border-2 transition-all ${!batchForm.isCombined ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'}`}
+              >
+                <div className="text-2xl mb-1">📚</div>
+                <div className="font-semibold text-gray-900 text-sm">Single Course Batch</div>
+                <div className="text-xs text-gray-500 mt-0.5">One course, standard batch</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatchType(true)}
+                className={`text-left p-4 rounded-2xl border-2 transition-all ${batchForm.isCombined ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
+              >
+                <div className="text-2xl mb-1">🔗</div>
+                <div className="font-semibold text-gray-900 text-sm">Combined Course Batch</div>
+                <div className="text-xs text-gray-500 mt-0.5">Multiple courses sharing same classes — perfect for joint modules</div>
+              </button>
             </div>
+          </div>
+
+          {/* STEP 2 - Single course */}
+          {!batchForm.isCombined && (
             <div>
               <label className="label">Course *</label>
               <select value={batchForm.courseId} onChange={e => setBatchForm(f => ({ ...f, courseId: e.target.value }))} className="input" required>
                 <option value="">Select course</option>
                 {(courses || []).map(c => <option key={c.id} value={c.id}>{c.shortName} — {c.name}</option>)}
               </select>
+            </div>
+          )}
+
+          {/* STEP 2 - Combined course */}
+          {batchForm.isCombined && (
+            <div className="space-y-4 bg-purple-50/50 border border-purple-100 rounded-2xl p-4">
+              <div>
+                <label className="label">Primary Course *</label>
+                <select
+                  value={batchForm.courseId}
+                  onChange={e => setBatchForm(f => ({ ...f, courseId: e.target.value, combinedCourseIds: f.combinedCourseIds.filter(cid => cid !== (courses || []).find(c => c.id === e.target.value)?.courseId) }))}
+                  className="input"
+                  required
+                >
+                  <option value="">Select main course</option>
+                  {(courses || []).map(c => <option key={c.id} value={c.id}>{c.shortName} — {c.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Additional Courses (sharing this batch) *</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(courses || []).filter(c => c.id !== batchForm.courseId).map(c => (
+                    <label key={c.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer text-sm transition-colors ${batchForm.combinedCourseIds.includes(c.courseId) ? 'border-purple-400 bg-white text-purple-800 font-medium' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                      <input
+                        type="checkbox"
+                        checked={batchForm.combinedCourseIds.includes(c.courseId)}
+                        onChange={() => toggleAdditionalCourse(c.courseId)}
+                        disabled={!batchForm.courseId}
+                        className="accent-purple-600"
+                      />
+                      {batchForm.combinedCourseIds.includes(c.courseId) ? '✅' : ''} {c.name}
+                    </label>
+                  ))}
+                </div>
+                {!batchForm.courseId && <p className="text-xs text-gray-400 mt-1">Select a primary course first</p>}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Combined for (months) *</label>
+                  <input
+                    type="number" min="1" max="24"
+                    value={batchForm.splitAfterMonths}
+                    onChange={e => setBatchForm(f => ({ ...f, splitAfterMonths: e.target.value }))}
+                    className="input" placeholder="e.g. 2"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">How many months will they study together?</p>
+                </div>
+                <div>
+                  <label className="label">Split Date</label>
+                  <input
+                    type="date"
+                    value={batchForm.splitDate}
+                    onChange={e => { setBatchForm(f => ({ ...f, splitDate: e.target.value })); setSplitDateTouched(true); }}
+                    className="input"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Auto-calculated from start date, or set manually</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Note about combination</label>
+                <textarea
+                  value={batchForm.combinedBatchNote}
+                  onChange={e => setBatchForm(f => ({ ...f, combinedBatchNote: e.target.value }))}
+                  className="input min-h-20"
+                  placeholder="Describe what they study together, e.g. First 2 months: Python basics, Data fundamentals shared. Month 3 onwards: separate tracks."
+                />
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3 - Common Fields */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className="label">Batch Name *</label>
+              <input value={batchForm.batchName} onChange={e => { setBatchForm(f => ({ ...f, batchName: e.target.value })); setBatchNameTouched(true); }} className="input" required placeholder="e.g. AI Batch 12" />
             </div>
           </div>
 
@@ -388,7 +619,7 @@ export default function CoursesPage() {
           </div>
 
           <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={() => { setShowBatchModal(false); setEditBatch(null); setBatchForm(EMPTY_BATCH); }} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={() => { setShowBatchModal(false); setEditBatch(null); setBatchForm(EMPTY_BATCH); setBatchNameTouched(false); setSplitDateTouched(false); }} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={batchMutation.isPending} className="btn-primary">{batchMutation.isPending ? 'Saving...' : editBatch ? 'Update Batch' : 'Create Batch'}</button>
           </div>
         </form>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Users, TrendingUp, CreditCard, AlertTriangle, Calendar, Flame, GraduationCap, Bot, ArrowUpRight, PhoneCall } from 'lucide-react';
+import { Users, TrendingUp, CreditCard, AlertTriangle, Calendar, Flame, GraduationCap, Bot, ArrowUpRight, PhoneCall, Link2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 import api from '../utils/api';
 import { fmt, fmtNum, fmtDate, timeAgo } from '../utils/constants';
@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const { data: metaLeadsData } = useQuery({ queryKey: ['meta-leads-dash'], queryFn: () => api.get('/meta/leads?limit=5').then(r => r.data), refetchInterval: 30000 });
   const { data: overdueFollowups } = useQuery({ queryKey: ['followups', 'overdue'], queryFn: () => api.get('/leads/followups?period=overdue').then(r => r.data), refetchInterval: 60000 });
   const { data: todayFollowups } = useQuery({ queryKey: ['followups', 'today'], queryFn: () => api.get('/leads/followups?period=today').then(r => r.data), refetchInterval: 60000 });
+  const { data: combinedBatches } = useQuery({ queryKey: ['combined-batches-dash'], queryFn: () => api.get('/courses/batches?isCombined=true&isActive=true').then(r => r.data) });
 
   const [quickCallLead, setQuickCallLead] = useState(null);
 
@@ -36,6 +37,9 @@ export default function DashboardPage() {
     name: s.source?.replace('_', ' ') || 'Other',
     value: s._count.id,
   }));
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const activeCombinedBatches = (combinedBatches || []).filter(b => !b.splitDate || new Date(b.splitDate) >= today);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -100,6 +104,43 @@ export default function DashboardPage() {
         <StatCard icon={TrendingUp} label="Today Collected" value={fmt(payStats?.todayCollected)} sub="Payments received" color="green" />
         <StatCard icon={Bot} label="AI Scored" value={`${fmtNum(ov.hotLeads + (ov.conversions || 0))}`} sub="Leads graded by AI" color="purple" />
       </div>
+
+      {/* Active Combined Batches — only shown when combined batches exist */}
+      {activeCombinedBatches.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="card-header flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-purple-600" />
+            <h3 className="section-title">Active Combined Batches</h3>
+            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">{activeCombinedBatches.length}</span>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {activeCombinedBatches.map(b => {
+              const courseNames = [b.course?.shortName, ...(b.combinedCourseDetails || []).map(c => c.shortName || c.name)].filter(Boolean).join(' + ');
+              const daysUntilSplit = b.splitDate ? Math.ceil((new Date(b.splitDate) - today) / 86400000) : null;
+              return (
+                <Link key={b.id} to={`/students?batchId=${b.id}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-gray-900 truncate">{b.batchName}</div>
+                    <div className="text-xs text-gray-500 truncate">{courseNames}</div>
+                  </div>
+                  <div className="flex items-center gap-4 flex-shrink-0">
+                    <div className="text-center">
+                      <div className="text-sm font-bold text-gray-900">{b._count?.enrollments || 0}</div>
+                      <div className="text-[10px] text-gray-400">students</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`text-sm font-bold ${daysUntilSplit != null && daysUntilSplit <= 7 ? 'text-orange-600' : 'text-gray-900'}`}>
+                        {daysUntilSplit != null ? Math.max(0, daysUntilSplit) : '—'}
+                      </div>
+                      <div className="text-[10px] text-gray-400">days to split</div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

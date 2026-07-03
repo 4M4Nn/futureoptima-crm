@@ -243,6 +243,15 @@ model Batch {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
+  isCombined        Boolean    @default(false)
+  combinedCourseIds CourseId[]
+  splitAfterMonths  Int?
+  splitDate         DateTime?
+  parentBatchId     String?
+  parentBatch       Batch?     @relation("BatchSplit", fields: [parentBatchId], references: [id])
+  childBatches      Batch[]    @relation("BatchSplit")
+  combinedBatchNote String?
+
   enrollments Enrollment[]
 }
 
