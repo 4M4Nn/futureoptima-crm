@@ -7,9 +7,19 @@ import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
 import { LoadingState, EmptyState } from '../../components/ui/index';
 
+// Format using LOCAL date components (not toISOString, which converts to UTC and
+// can shift the date by a day for timezones ahead of UTC, e.g. IST).
+const formatDate = (d) => {
+  const date = new Date(d);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const now = new Date();
-const DEFAULT_FROM = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-const DEFAULT_TO = now.toISOString().slice(0, 10);
+const DEFAULT_FROM = formatDate(new Date(now.getFullYear(), now.getMonth(), 1));
+const DEFAULT_TO = formatDate(now);
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function exportCSV(rows, filename) {

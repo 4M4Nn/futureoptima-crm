@@ -18,6 +18,11 @@ router.use(authorize('SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'));
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+// Anchor date-only query params (YYYY-MM-DD) to UTC so filtering doesn't drift
+// with the server's local timezone (e.g. IST is UTC+5:30).
+const startOfDayUTC = (dateStr) => new Date(dateStr + 'T00:00:00.000Z');
+const endOfDayUTC = (dateStr) => new Date(dateStr + 'T23:59:59.999Z');
+
 // GET /api/finance/dashboard
 router.get('/dashboard', async (req, res) => {
   try {
@@ -30,9 +35,9 @@ router.get('/dashboard', async (req, res) => {
     const [todayAgg, weekAgg, monthAgg, yearAgg, monthExpenses, pendingFees, recentPayments, pendingInstallments, overdueInstallments] = await Promise.all([
       prisma.payment.aggregate({ where: { paidAt: { gte: today } }, _sum: { amount: true } }),
       prisma.payment.aggregate({ where: { paidAt: { gte: weekStart } }, _sum: { amount: true } }),
-      prisma.payment.aggregate({ where: { paidAt: { gte: monthStart } }, _sum: { amount: true } }),
+      prisma.payment.aggregate({ where: { paidAt: { gte: monthStart, lte: now } }, _sum: { amount: true } }),
       prisma.payment.aggregate({ where: { paidAt: { gte: yearStart } }, _sum: { amount: true } }),
-      prisma.expense.aggregate({ where: { date: { gte: monthStart } }, _sum: { amount: true } }),
+      prisma.expense.aggregate({ where: { date: { gte: monthStart, lte: now } }, _sum: { amount: true } }),
       prisma.enrollment.aggregate({ where: { balanceDue: { gt: 0 } }, _sum: { balanceDue: true } }),
       prisma.payment.findMany({
         take: 10,
@@ -64,6 +69,40 @@ router.get('/dashboard', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/finance/debug - diagnose date/timezone issues in finance data
+router.get('/debug', async (req, res) => {
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [totalExpenses, latestExpenses, totalPayments, latestPayments] = await Promise.all([
+      prisma.expense.count(),
+      prisma.expense.findMany({
+        take: 3,
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, category: true, amount: true, date: true, createdAt: true },
+      }),
+      prisma.payment.count(),
+      prisma.payment.findMany({
+        take: 3,
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, amount: true, paidAt: true, createdAt: true },
+      }),
+    ]);
+
+    res.json({
+      totalExpenses,
+      latestExpenses,
+      totalPayments,
+      latestPayments,
+      serverTime: now.toISOString(),
+      serverTimeLocal: now.toString(),
+      serverTimezoneOffsetMinutes: now.getTimezoneOffset(),
+      monthStart: monthStart.toISOString(),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/finance/collections
 router.get('/collections', async (req, res) => {
   try {
@@ -71,8 +110,8 @@ router.get('/collections', async (req, res) => {
     const where = {};
     if (from || to) {
       where.paidAt = {};
-      if (from) where.paidAt.gte = new Date(from);
-      if (to) where.paidAt.lte = new Date(to + 'T23:59:59');
+      if (from) where.paidAt.gte = startOfDayUTC(from);
+      if (to) where.paidAt.lte = endOfDayUTC(to);
     }
     if (counselorId) where.collectedById = counselorId;
     if (courseId) {
@@ -140,8 +179,8 @@ router.get('/expenses', async (req, res) => {
     const where = {};
     if (from || to) {
       where.date = {};
-      if (from) where.date.gte = new Date(from);
-      if (to) where.date.lte = new Date(to + 'T23:59:59');
+      if (from) where.date.gte = startOfDayUTC(from);
+      if (to) where.date.lte = endOfDayUTC(to);
     }
     if (category) where.category = category;
 
@@ -264,19 +303,14 @@ router.get('/reports/pl', async (req, res) => {
     if (from || to) {
       where.paidAt = {};
       where.date = {};
-      if (from) { where.paidAt.gte = new Date(from); where.date.gte = new Date(from); }
-      if (to) { where.paidAt.lte = new Date(to + 'T23:59:59'); where.date.lte = new Date(to + 'T23:59:59'); }
+      if (from) { where.paidAt.gte = startOfDayUTC(from); where.date.gte = startOfDayUTC(from); }
+      if (to) { where.paidAt.lte = endOfDayUTC(to); where.date.lte = endOfDayUTC(to); }
     }
 
-    const [incomeAgg, expenseAgg, expenseByCategory, monthlyIncome] = await Promise.all([
+    const [incomeAgg, expenseAgg, expenseByCategory] = await Promise.all([
       prisma.payment.aggregate({ where: from || to ? { paidAt: where.paidAt } : {}, _sum: { amount: true } }),
       prisma.expense.aggregate({ where: from || to ? { date: where.date } : {}, _sum: { amount: true } }),
       prisma.expense.groupBy({ by: ['category'], where: from || to ? { date: where.date } : {}, _sum: { amount: true } }),
-      prisma.payment.groupBy({
-        by: [],
-        where: from || to ? { paidAt: where.paidAt } : {},
-        _sum: { amount: true },
-      }),
     ]);
 
     const totalIncome = incomeAgg._sum.amount || 0;
@@ -334,8 +368,8 @@ function monthOverlapsRange(year, month, from, to) {
 router.get('/reports/pl-excel', async (req, res) => {
   try {
     const { from, to } = req.query;
-    const fromDate = from ? new Date(from) : null;
-    const toDate = to ? new Date(to + 'T23:59:59') : null;
+    const fromDate = from ? startOfDayUTC(from) : null;
+    const toDate = to ? endOfDayUTC(to) : null;
     const paidAtWhere = {};
     if (fromDate) paidAtWhere.gte = fromDate;
     if (toDate) paidAtWhere.lte = toDate;
@@ -519,8 +553,8 @@ router.get('/reports/collection-excel', async (req, res) => {
     const where = {};
     if (from || to) {
       where.paidAt = {};
-      if (from) where.paidAt.gte = new Date(from);
-      if (to) where.paidAt.lte = new Date(to + 'T23:59:59');
+      if (from) where.paidAt.gte = startOfDayUTC(from);
+      if (to) where.paidAt.lte = endOfDayUTC(to);
     }
     if (courseId) where.enrollment = { courseId };
     if (counselorId) where.enrollment = { ...(where.enrollment || {}), lead: { assignedToId: counselorId } };
@@ -638,8 +672,8 @@ router.get('/reports/expense-excel', async (req, res) => {
     const where = {};
     if (from || to) {
       where.date = {};
-      if (from) where.date.gte = new Date(from);
-      if (to) where.date.lte = new Date(to + 'T23:59:59');
+      if (from) where.date.gte = startOfDayUTC(from);
+      if (to) where.date.lte = endOfDayUTC(to);
     }
     if (category) where.category = category;
 
