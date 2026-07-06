@@ -4,7 +4,7 @@ import { CreditCard, Plus, CheckCircle, RefreshCw, Download, X } from 'lucide-re
 import { motion } from 'framer-motion';
 import api from '../../utils/api';
 import { fmt, fmtDatetime, PAYMENT_METHODS } from '../../utils/constants';
-import { StatCard, LoadingState, EmptyState, Pagination, Modal, Input, Select, StatusBadge, ConfirmDialog } from '../../components/ui/index';
+import { StatCard, LoadingState, EmptyState, Pagination, Modal, Input, Select, StatusBadge, ConfirmDialog, BankAccountPicker, BankAccountBadge } from '../../components/ui/index';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 
@@ -26,7 +26,6 @@ async function downloadReceipt(paymentId, receiptNumber) {
 
 function AddPaymentModal({ open, onClose }) {
   const qc = useQueryClient();
-  const BANK_ACCOUNTS = [{ value: 'HDFC', label: 'HDFC Bank' }, { value: 'ICICI', label: 'ICICI Bank' }, { value: 'IDFC', label: 'IDFC Bank' }, { value: 'CASH', label: 'Cash' }];
   const [form, setForm] = useState({ enrollmentId: '', amount: '', method: 'UPI', transactionId: '', remarks: '', installmentId: '', bankAccount: 'CASH' });
   const [searchPhone, setSearchPhone] = useState('');
   const [enrollment, setEnrollment] = useState(null);
@@ -135,12 +134,7 @@ function AddPaymentModal({ open, onClose }) {
               <Input label="Transaction / Ref ID" value={form.transactionId} onChange={e => setForm(p => ({ ...p, transactionId: e.target.value }))} placeholder="UPI ref / cheque no" />
               <Input label="Remarks" value={form.remarks} onChange={e => setForm(p => ({ ...p, remarks: e.target.value }))} placeholder="Optional" />
             </div>
-            <div>
-              <label className="label">Received Into (Account) *</label>
-              <select className="input" value={form.bankAccount} onChange={e => setForm(p => ({ ...p, bankAccount: e.target.value }))}>
-                {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
-              </select>
-            </div>
+            <BankAccountPicker value={form.bankAccount} onChange={v => setForm(p => ({ ...p, bankAccount: v }))} />
 
             <div className="flex justify-end gap-3 pt-2">
               <button className="btn-secondary" onClick={handleClose}>Cancel</button>
@@ -208,16 +202,16 @@ export default function PaymentsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                {['Receipt No', 'Student', 'Course', 'Amount', 'Method', 'Date', 'Actions'].map(h => (
+                {['Receipt No', 'Student', 'Course', 'Amount', 'Method', 'Received In', 'Date', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left table-header">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7}><LoadingState /></td></tr>
+                <tr><td colSpan={8}><LoadingState /></td></tr>
               ) : !data?.data?.length ? (
-                <tr><td colSpan={7}><EmptyState title="No payments yet" description="Record your first payment" action={<button onClick={() => setShowAdd(true)} className="btn-primary mx-auto">Record Payment</button>} /></td></tr>
+                <tr><td colSpan={8}><EmptyState title="No payments yet" description="Record your first payment" action={<button onClick={() => setShowAdd(true)} className="btn-primary mx-auto">Record Payment</button>} /></td></tr>
               ) : data.data.map((p, i) => (
                 <motion.tr key={p.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }} className={`table-row ${p.isCancelled ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3 text-xs font-mono text-gray-700">
@@ -231,6 +225,7 @@ export default function PaymentsPage() {
                   <td className="px-4 py-3 text-xs text-gray-600">{p.enrollment?.course?.shortName}</td>
                   <td className={`px-4 py-3 text-sm font-bold ${p.isCancelled ? 'text-red-400 line-through' : 'text-green-700'}`}>{fmt(p.amount)}</td>
                   <td className="px-4 py-3"><span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full">{p.method.replace('_', ' ')}</span></td>
+                  <td className="px-4 py-3"><BankAccountBadge bankAccount={p.bankAccount} /></td>
                   <td className="px-4 py-3 text-xs text-gray-500">{fmtDatetime(p.paidAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">

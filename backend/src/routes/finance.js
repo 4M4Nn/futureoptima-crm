@@ -32,7 +32,7 @@ router.get('/dashboard', async (req, res) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const yearStart = new Date(now.getFullYear(), 0, 1);
 
-    const [todayAgg, weekAgg, monthAgg, yearAgg, monthExpenses, pendingFees, recentPayments, pendingInstallments, overdueInstallments] = await Promise.all([
+    const [todayAgg, weekAgg, monthAgg, yearAgg, monthExpenses, pendingFees, recentPayments, pendingInstallments, overdueInstallments, bankWiseAgg] = await Promise.all([
       prisma.payment.aggregate({ where: { paidAt: { gte: today } }, _sum: { amount: true } }),
       prisma.payment.aggregate({ where: { paidAt: { gte: weekStart } }, _sum: { amount: true } }),
       prisma.payment.aggregate({ where: { paidAt: { gte: monthStart, lte: now } }, _sum: { amount: true } }),
@@ -49,10 +49,17 @@ router.get('/dashboard', async (req, res) => {
       }),
       prisma.installment.count({ where: { status: 'DUE' } }),
       prisma.installment.count({ where: { status: 'OVERDUE' } }),
+      prisma.payment.groupBy({ by: ['bankAccount'], where: { paidAt: { gte: monthStart, lte: now } }, _sum: { amount: true } }),
     ]);
 
     const monthCollection = monthAgg._sum.amount || 0;
     const monthExpAmt = monthExpenses._sum.amount || 0;
+
+    const bankAmt = (key) => bankWiseAgg.find(b => b.bankAccount === key)?._sum.amount || 0;
+    const cash = bankAmt('CASH');
+    const icici = bankAmt('ICICI');
+    const idfc = bankAmt('IDFC');
+    const bankWiseCollection = { cash, icici, idfc, total: cash + icici + idfc };
 
     res.json({
       todayCollection: todayAgg._sum.amount || 0,
@@ -65,6 +72,7 @@ router.get('/dashboard', async (req, res) => {
       pendingInstallments,
       overdueInstallments,
       recentTransactions: recentPayments,
+      bankWiseCollection,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -307,20 +315,24 @@ router.get('/reports/pl', async (req, res) => {
       if (to) { where.paidAt.lte = endOfDayUTC(to); where.date.lte = endOfDayUTC(to); }
     }
 
-    const [incomeAgg, expenseAgg, expenseByCategory] = await Promise.all([
+    const [incomeAgg, expenseAgg, expenseByCategory, bankWiseAgg] = await Promise.all([
       prisma.payment.aggregate({ where: from || to ? { paidAt: where.paidAt } : {}, _sum: { amount: true } }),
       prisma.expense.aggregate({ where: from || to ? { date: where.date } : {}, _sum: { amount: true } }),
       prisma.expense.groupBy({ by: ['category'], where: from || to ? { date: where.date } : {}, _sum: { amount: true } }),
+      prisma.payment.groupBy({ by: ['bankAccount'], where: from || to ? { paidAt: where.paidAt } : {}, _sum: { amount: true } }),
     ]);
 
     const totalIncome = incomeAgg._sum.amount || 0;
     const totalExpenses = expenseAgg._sum.amount || 0;
+    const bankAmt = (key) => bankWiseAgg.find(b => b.bankAccount === key)?._sum.amount || 0;
+    const bankWiseIncome = { cash: bankAmt('CASH'), icici: bankAmt('ICICI'), idfc: bankAmt('IDFC') };
 
     res.json({
       totalIncome,
       totalExpenses,
       netProfit: totalIncome - totalExpenses,
       expenseBreakdown: expenseByCategory,
+      bankWiseIncome,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -588,6 +600,7 @@ router.get('/reports/collection-excel', async (req, res) => {
       { header: 'Total Paid', key: 'totalPaid', width: 16, money: true },
       { header: 'Balance Due', key: 'balanceDue', width: 16, money: true },
       { header: 'Payment Method', key: 'method', width: 16 },
+      { header: 'Received In', key: 'receivedIn', width: 14 },
       { header: 'Transaction ID', key: 'txnId', width: 20 },
       { header: 'Collected By', key: 'collectedBy', width: 18 },
       { header: 'Counselor Name', key: 'counselor', width: 18 },
@@ -605,6 +618,7 @@ router.get('/reports/collection-excel', async (req, res) => {
       totalPaid: p.enrollment?.paidAmount || 0,
       balanceDue: p.enrollment?.balanceDue || 0,
       method: p.method,
+      receivedIn: p.bankAccount || 'CASH',
       txnId: p.transactionId || '',
       collectedBy: p.collectedBy?.name || '',
       counselor: p.enrollment?.lead?.assignedTo?.name || '',

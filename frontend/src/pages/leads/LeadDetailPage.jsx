@@ -110,6 +110,7 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
         setCourseId(found.id);
         setCourseFee(String(found.fees));
         setBatchId('');
+        if (found.courseId === 'INTERNSHIP') setInstallments('1');
         return;
       }
     }
@@ -119,6 +120,8 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
   }, [open, courses, interestedCourse]);
 
   const netFee = Math.max(0, (Number(courseFee) || 0) - (Number(discountAmount) || 0));
+  const selectedCourse = courses?.find(c => c.id === courseId);
+  const isInternship = selectedCourse?.courseId === 'INTERNSHIP';
 
   const handleCourseChange = (id) => {
     setCourseId(id);
@@ -126,6 +129,7 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
     const selected = courses?.find(c => c.id === id);
     if (selected) setCourseFee(String(selected.fees));
     else setCourseFee('');
+    if (selected?.courseId === 'INTERNSHIP') setInstallments('1');
   };
 
   const mutation = useMutation({
@@ -247,13 +251,20 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
 
         <div>
           <label className="label">Number of Installments</label>
-          <select className="input" value={installments} onChange={e => setInstallments(e.target.value)}>
+          <select className="input" value={installments} onChange={e => setInstallments(e.target.value)} disabled={isInternship}>
             <option value="1">Full Payment (1 installment)</option>
             {Array.from({ length: 11 }, (_, i) => i + 2).map(n => (
               <option key={n} value={n}>{n} Installments</option>
             ))}
           </select>
+          {isInternship && <p className="text-xs text-gray-400 mt-1">Internship fee is collected as a single payment</p>}
         </div>
+
+        {isInternship && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-700">
+            🎓 Internship Certificate on completion
+          </div>
+        )}
 
         {/* Net fee summary card */}
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-2">

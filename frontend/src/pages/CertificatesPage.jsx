@@ -38,6 +38,7 @@ function EnrollmentCard({ enrollment }) {
   const [generating, setGenerating] = useState('');
   const [certResult, setCertResult] = useState(null);
   const isPending = enrollment.paymentStatus === 'PENDING';
+  const isInternshipCourse = enrollment.course?.courseId === 'INTERNSHIP';
 
   const generate = async (type) => {
     setGenerating(type);
@@ -111,6 +112,12 @@ function EnrollmentCard({ enrollment }) {
         </div>
       )}
 
+      {isInternshipCourse && !certResult && (
+        <div className="mb-3 text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+          🎓 This student completed the 1-month Internship Programme
+        </div>
+      )}
+
       {certResult ? (
         <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
           <div>
@@ -124,11 +131,13 @@ function EnrollmentCard({ enrollment }) {
         </div>
       ) : (
         <div className={`flex gap-2 ${isPending ? 'opacity-40 pointer-events-none' : ''}`}>
-          <button onClick={() => generate('COMPLETION')} disabled={!!generating}
-            className="btn-gold text-xs py-2 px-3 flex-1 justify-center">
-            {generating === 'COMPLETION' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GraduationCap className="w-3.5 h-3.5" />}
-            Completion Certificate
-          </button>
+          {!isInternshipCourse && (
+            <button onClick={() => generate('COMPLETION')} disabled={!!generating}
+              className="btn-gold text-xs py-2 px-3 flex-1 justify-center">
+              {generating === 'COMPLETION' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GraduationCap className="w-3.5 h-3.5" />}
+              Completion Certificate
+            </button>
+          )}
           <button onClick={() => generate('INTERNSHIP')} disabled={!!generating}
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3 rounded-xl flex-1 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-60">
             {generating === 'INTERNSHIP' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Briefcase className="w-3.5 h-3.5" />}

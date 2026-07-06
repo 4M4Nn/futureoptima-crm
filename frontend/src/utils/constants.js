@@ -6,6 +6,7 @@ export const COURSES = {
   VIBE_CODING_SAAS: 'Vibe Coding & SaaS Dev',
   DATA_ANALYTICS: 'Data Analytics',
   BUSINESS_ANALYTICS: 'Business Analytics',
+  INTERNSHIP: 'Internship Programme (1 Month)',
 };
 
 export const LEAD_STATUSES = ['NEW','CONTACTED','QUALIFIED','DEMO_SCHEDULED','PROPOSAL_SENT','NEGOTIATION','WON','LOST','NURTURING'];

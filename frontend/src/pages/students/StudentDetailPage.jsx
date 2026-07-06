@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, CreditCard, CheckCircle, GraduationCap, Bot, Loader2, Download, Award, Banknote, X, Trash2, Ban } from 'lucide-react';
 import api from '../../utils/api';
 import { fmt, fmtDate, fmtDatetime } from '../../utils/constants';
-import { LoadingState, StatusBadge, Modal, Input, Select, ConfirmDialog } from '../../components/ui/index';
+import { LoadingState, StatusBadge, Modal, Input, Select, ConfirmDialog, BankAccountPicker, BankAccountBadge } from '../../components/ui/index';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 
@@ -24,8 +24,6 @@ async function downloadReceipt(paymentId, receiptNumber) {
     toast.error('Receipt download failed');
   }
 }
-
-const BANK_ACCOUNTS = [{ value: 'HDFC', label: 'HDFC Bank' }, { value: 'ICICI', label: 'ICICI Bank' }, { value: 'IDFC', label: 'IDFC Bank' }, { value: 'CASH', label: 'Cash' }];
 
 function PayInstallmentModal({ open, onClose, installment, enrollmentId }) {
   const qc = useQueryClient();
@@ -71,12 +69,7 @@ function PayInstallmentModal({ open, onClose, installment, enrollmentId }) {
             <Input label="Amount (₹)" type="number" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} />
             <Select label="Payment Method" value={form.method} onChange={v => setForm(p => ({ ...p, method: v }))} options={OPTS} />
             <Input label="Transaction / Ref ID" value={form.transactionId} onChange={e => setForm(p => ({ ...p, transactionId: e.target.value }))} placeholder="UPI ref / cheque no" />
-            <div>
-              <label className="label">Received Into (Account)</label>
-              <select className="input" value={form.bankAccount} onChange={e => setForm(p => ({ ...p, bankAccount: e.target.value }))}>
-                {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
-              </select>
-            </div>
+            <BankAccountPicker value={form.bankAccount} onChange={v => setForm(p => ({ ...p, bankAccount: v }))} />
             <div className="flex justify-end gap-3">
               <button className="btn-secondary" onClick={handleClose}>Cancel</button>
               <button className="btn-gold" onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>
@@ -142,12 +135,7 @@ function PayFullModal({ open, onClose, enrollment }) {
             </div>
             <Select label="Payment Method" value={method} onChange={setMethod} options={OPTS} />
             <Input label="Transaction / Ref ID (optional)" value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="UPI ref / cheque no / bank ref" />
-            <div>
-              <label className="label">Received Into (Account)</label>
-              <select className="input" value={bankAccount} onChange={e => setBankAccount(e.target.value)}>
-                {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
-              </select>
-            </div>
+            <BankAccountPicker value={bankAccount} onChange={setBankAccount} />
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-xs text-yellow-800">
               ⚠️ This will mark all pending installments as PAID and update enrollment status to PAID.
             </div>
@@ -394,7 +382,7 @@ export default function StudentDetailPage() {
                       {p.isCancelled ? <Ban className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-green-600" />}
                     </div>
                     <div className="flex-1">
-                      <div className="text-sm font-semibold text-gray-900">{p.receiptNumber} {p.isCancelled && <span className="text-xs text-red-500 font-normal ml-1">CANCELLED</span>}</div>
+                      <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 flex-wrap">{p.receiptNumber} <BankAccountBadge bankAccount={p.bankAccount} /> {p.isCancelled && <span className="text-xs text-red-500 font-normal ml-1">CANCELLED</span>}</div>
                       <div className="text-xs text-gray-500">{p.method.replace('_', ' ')} {p.transactionId ? `• Ref: ${p.transactionId}` : ''} • {p.collectedBy?.name}</div>
                     </div>
                     <div className="text-right">

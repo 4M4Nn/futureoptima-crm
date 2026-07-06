@@ -22,7 +22,7 @@ function generateCertNo() {
 }
 
 async function generateCertificatePDF(data) {
-  const { studentName, courseName, duration, type, certificateNo, completionDate, issuedAt } = data;
+  const { studentName, courseName, duration, type, certificateNo, completionDate, issuedAt, isInternshipCourse } = data;
   const filename = `cert_${certificateNo.replace(/[^a-z0-9]/gi, '_')}.pdf`;
   const filePath = path.join(certsDir, filename);
 
@@ -72,7 +72,10 @@ async function generateCertificatePDF(data) {
     const nameW = Math.min(studentName.length * 14, 400);
     doc.moveTo((W - nameW) / 2, bodyY + 54).lineTo((W + nameW) / 2, bodyY + 54).strokeColor('#CBD5E1').lineWidth(1).stroke();
 
-    if (type === 'INTERNSHIP') {
+    if (isInternshipCourse) {
+      doc.fillColor('#4B5563').fontSize(11).font('Helvetica')
+        .text('has successfully completed the 1-Month Internship Programme in', 40, bodyY + 62, { align: 'center', width: W - 80 });
+    } else if (type === 'INTERNSHIP') {
       doc.fillColor('#4B5563').fontSize(11).font('Helvetica')
         .text('has successfully completed an internship program in', 40, bodyY + 62, { align: 'center', width: W - 80 });
     } else {
@@ -87,15 +90,20 @@ async function generateCertificatePDF(data) {
     // Duration and date
     const detailY = bodyY + 112;
     doc.fillColor('#4B5563').fontSize(10).font('Helvetica')
-      .text(`Duration: ${duration}`, 40, detailY, { align: 'center', width: W - 80 });
+      .text(`Duration: ${isInternshipCourse ? '1 Month' : duration}`, 40, detailY, { align: 'center', width: W - 80 });
 
     const dateLabel = type === 'INTERNSHIP' ? 'Internship Completed On' : 'Completed On';
     doc.text(`${dateLabel}: ${completionDate}`, 40, detailY + 16, { align: 'center', width: W - 80 });
 
+    if (isInternshipCourse) {
+      doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold')
+        .text('Demonstrated practical skills and industry readiness', 40, detailY + 32, { align: 'center', width: W - 80 });
+    }
+
     // Certificate number
     doc.fillColor('#6B7280').fontSize(8).font('Helvetica')
-      .text(`Certificate No: ${certificateNo}`, 40, detailY + 36, { align: 'center', width: W - 80 });
-    doc.text(`Issued On: ${issuedAt}`, 40, detailY + 48, { align: 'center', width: W - 80 });
+      .text(`Certificate No: ${certificateNo}`, 40, detailY + (isInternshipCourse ? 48 : 36), { align: 'center', width: W - 80 });
+    doc.text(`Issued On: ${issuedAt}`, 40, detailY + (isInternshipCourse ? 60 : 48), { align: 'center', width: W - 80 });
 
     // Signature lines
     const sigY = H - 100;
@@ -134,6 +142,7 @@ async function buildCertData(enrollment) {
     duration: course.duration,
     completionDate,
     issuedAt: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }),
+    isInternshipCourse: course.courseId === 'INTERNSHIP',
   };
 }
 

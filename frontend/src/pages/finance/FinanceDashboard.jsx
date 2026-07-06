@@ -171,6 +171,27 @@ export default function FinanceDashboard() {
         </div>
       </div>
 
+      {/* Bank-wise Collection */}
+      <div className="card">
+        <h3 className="font-semibold text-gray-900 mb-4">Bank-wise Collection This Month</h3>
+        <div className="space-y-3">
+          {[
+            { label: '💵 Cash', value: d.bankWiseCollection?.cash || 0, border: 'border-green-500', text: 'text-green-600' },
+            { label: '🏦 ICICI', value: d.bankWiseCollection?.icici || 0, border: 'border-orange-500', text: 'text-orange-600' },
+            { label: '🏦 IDFC', value: d.bankWiseCollection?.idfc || 0, border: 'border-blue-500', text: 'text-blue-600' },
+          ].map(row => (
+            <div key={row.label} className={`flex items-center justify-between pl-4 py-2 border-l-4 ${row.border}`}>
+              <span className="text-sm font-medium text-gray-700">{row.label}</span>
+              <span className={`text-lg font-bold ${row.text}`}>{fmt(row.value)}</span>
+            </div>
+          ))}
+          <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
+            <span className="text-sm font-bold text-gray-900">Total</span>
+            <span className="text-xl font-bold text-primary-900">{fmt(d.bankWiseCollection?.total || 0)}</span>
+          </div>
+        </div>
+      </div>
+
       {/* Tables Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Transactions */}

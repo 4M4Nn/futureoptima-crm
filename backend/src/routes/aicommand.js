@@ -64,6 +64,7 @@ python|fullstack|full stack|web development -> PYTHON_FULLSTACK
 vibe|saas|no code|vibe coding -> VIBE_CODING_SAAS
 data analytics|analytics|excel|power bi -> DATA_ANALYTICS
 business|mba|business analytics -> BUSINESS_ANALYTICS
+internship|intern -> INTERNSHIP
 
 Lead source:
 facebook|fb -> FACEBOOK_ADS

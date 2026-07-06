@@ -46,6 +46,7 @@ async function main() {
     { courseId: 'VIBE_CODING_SAAS', name: 'Vibe Coding & SaaS Development', shortName: 'Vibe+SaaS', duration: '4 months', totalHours: 260, fees: 58000, highlights: ['No-Code + Code Hybrid', 'SaaS Architecture', 'Stripe Payments', 'Launch & Scale'] },
     { courseId: 'DATA_ANALYTICS', name: 'Data Analytics', shortName: 'Data Analytics', duration: '3 months', totalHours: 180, fees: 35000, highlights: ['Excel & SQL', 'Power BI & Tableau', 'Python Analytics', 'Dashboards'] },
     { courseId: 'BUSINESS_ANALYTICS', name: 'Business Analytics', shortName: 'Biz Analytics', duration: '3 months', totalHours: 180, fees: 38000, highlights: ['Business Intelligence', 'Forecasting', 'Data Storytelling', 'MBA-level Case Studies'] },
+    { courseId: 'INTERNSHIP', name: 'Internship Programme', shortName: 'Internship', duration: '1 month', totalHours: 160, fees: 15000, emiAvailable: false, maxInstallments: 1, highlights: ['Real project experience', 'Industry mentorship', 'Certificate on completion', 'Live project work'] },
   ];
 
   for (const c of courses) {

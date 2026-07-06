@@ -156,6 +156,45 @@ export function Textarea({ label, className = '', ...props }) {
   );
 }
 
+// Bank account picker — 3 big colored toggle cards (Cash / ICICI / IDFC)
+export const BANK_ACCOUNT_OPTIONS = [
+  { value: 'CASH', label: 'Cash', emoji: '💵', activeCls: 'border-green-500 bg-green-50 text-green-700' },
+  { value: 'ICICI', label: 'ICICI Bank', emoji: '🏦', activeCls: 'border-orange-500 bg-orange-50 text-orange-700' },
+  { value: 'IDFC', label: 'IDFC Bank', emoji: '🏦', activeCls: 'border-blue-500 bg-blue-50 text-blue-700' },
+];
+
+export function BankAccountBadge({ bankAccount }) {
+  const cfg = {
+    CASH: 'bg-green-50 text-green-700', ICICI: 'bg-orange-50 text-orange-700', IDFC: 'bg-blue-50 text-blue-700', HDFC: 'bg-gray-50 text-gray-700',
+  };
+  const opt = BANK_ACCOUNT_OPTIONS.find(o => o.value === bankAccount);
+  const label = opt ? opt.label.replace(' Bank', '') : (bankAccount || 'Cash');
+  return <span className={clsx('inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold', cfg[bankAccount] || 'bg-gray-50 text-gray-700')}>{opt?.emoji || '💵'} {label}</span>;
+}
+
+export function BankAccountPicker({ label = 'Received In', value, onChange, className = '' }) {
+  return (
+    <div className={className}>
+      <label className="label">{label}</label>
+      <div className="grid grid-cols-3 gap-2">
+        {BANK_ACCOUNT_OPTIONS.map(o => (
+          <button
+            type="button"
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            className={clsx(
+              'flex flex-col items-center justify-center gap-1 py-3 rounded-xl border-2 font-semibold text-sm transition-colors',
+              value === o.value ? o.activeCls : 'border-gray-200 text-gray-500 hover:border-gray-300'
+            )}
+          >
+            <span className="text-lg">{o.emoji}</span>{o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Confirm dialog — supports danger mode + loading state
 export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel = 'Confirm', danger = false, loading = false }) {
   return (

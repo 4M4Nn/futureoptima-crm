@@ -63,6 +63,108 @@ router.get('/export-excel', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/enrollments/quick-add — add an existing/walk-in student with enrollment + optional opening payment in one step
+router.post('/quick-add', [
+  body('name').trim().isLength({ min: 2 }),
+  body('phone').notEmpty().trim(),
+  body('courseId').notEmpty(),
+  body('courseFee').isFloat({ min: 0 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const {
+      name, phone, email, city,
+      courseId: rawCourseId, batchId, enrollmentDate,
+      courseFee, discountAmount = 0, installments = 1,
+      payment,
+    } = req.body;
+
+    const courseRecord = /^[A-Z][A-Z0-9_]+$/.test(rawCourseId)
+      ? await prisma.course.findFirst({ where: { courseId: rawCourseId } })
+      : await prisma.course.findUnique({ where: { id: rawCourseId } });
+    if (!courseRecord) return res.status(404).json({ error: `Course '${rawCourseId}' not found` });
+
+    const existingLead = await prisma.lead.findUnique({ where: { phone: phone.trim() }, include: { enrollment: true } });
+    if (existingLead?.enrollment) {
+      return res.status(409).json({ error: `${existingLead.name} is already enrolled`, enrollmentId: existingLead.enrollment.id });
+    }
+
+    const netFee = Math.max(0, Number(courseFee) - (Number(discountAmount) || 0));
+    const receiptNo = `FO-ENR-${Date.now()}`;
+    const numInstallments = Math.min(12, Math.max(1, Number(installments) || 1));
+    const enrolledAt = enrollmentDate ? new Date(enrollmentDate) : new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      const leadRecord = existingLead
+        ? await tx.lead.update({ where: { id: existingLead.id }, data: { status: 'WON', convertedAt: new Date() } })
+        : await tx.lead.create({
+            data: {
+              name: name.trim(), phone: phone.trim(), email: email || null, city: city || null,
+              status: 'WON', source: 'OTHER', interestedCourse: courseRecord.courseId, convertedAt: new Date(),
+            },
+          });
+
+      const enr = await tx.enrollment.create({
+        data: {
+          leadId: leadRecord.id,
+          courseId: courseRecord.id,
+          batchId: batchId || null,
+          courseFee: Number(courseFee),
+          discountAmount: Number(discountAmount) || 0,
+          netFee,
+          paidAmount: 0,
+          balanceDue: netFee,
+          receiptNo,
+          paymentStatus: 'PENDING',
+          enrolledAt,
+        },
+      });
+
+      if (numInstallments > 1) {
+        const instAmt = Math.floor(netFee / numInstallments);
+        const remainder = netFee - instAmt * numInstallments;
+        for (let i = 1; i <= numInstallments; i++) {
+          const dueDate = new Date(enrolledAt);
+          dueDate.setMonth(dueDate.getMonth() + (i - 1));
+          await tx.installment.create({
+            data: { enrollmentId: enr.id, installmentNo: i, amount: i === 1 ? instAmt + remainder : instAmt, dueDate, status: i === 1 ? 'DUE' : 'UPCOMING' },
+          });
+        }
+      }
+
+      let paymentRecord = null;
+      if (payment && Number(payment.amount) > 0) {
+        const paidAmount = Number(payment.amount);
+        const receiptNumber = `FO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        paymentRecord = await tx.payment.create({
+          data: {
+            enrollmentId: enr.id,
+            amount: paidAmount,
+            method: payment.method || 'CASH',
+            transactionId: payment.transactionId || null,
+            receiptNumber,
+            remarks: payment.remarks || 'Opening balance entry',
+            bankAccount: payment.receivedIn || 'CASH',
+            paidAt: payment.date ? new Date(payment.date) : new Date(),
+            collectedById: req.user.id,
+          },
+        });
+        const newBalance = netFee - paidAmount;
+        await tx.enrollment.update({
+          where: { id: enr.id },
+          data: { paidAmount, balanceDue: newBalance, paymentStatus: newBalance <= 0 ? 'PAID' : 'PARTIAL' },
+        });
+      }
+
+      return { enrollment: enr, payment: paymentRecord, lead: leadRecord };
+    });
+
+    await logActivity(result.lead.id, req.user.id, 'ENROLLED', { course: courseRecord.name, quickAdd: true });
+    res.status(201).json({ enrollmentId: result.enrollment.id, message: 'Student added successfully!' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.post('/', [
   body('leadId').notEmpty(),
   body('courseId').notEmpty(),
@@ -136,7 +238,7 @@ router.get('/', async (req, res) => {
         where, skip, take: parseInt(limit), orderBy: { enrolledAt: 'desc' },
         include: {
           lead: { select: { name: true, phone: true, email: true } },
-          course: { select: { name: true, shortName: true } },
+          course: { select: { courseId: true, name: true, shortName: true } },
           batch: { select: { batchName: true } },
           _count: { select: { payments: true } },
         },

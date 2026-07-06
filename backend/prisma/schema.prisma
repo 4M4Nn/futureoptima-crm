@@ -41,6 +41,7 @@ enum CourseId {
   VIBE_CODING_SAAS
   DATA_ANALYTICS
   BUSINESS_ANALYTICS
+  INTERNSHIP
 }
 
 enum CourseMode {
