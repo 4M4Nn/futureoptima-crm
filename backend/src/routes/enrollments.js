@@ -173,7 +173,7 @@ router.post('/', [
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
-    const { leadId, courseId: rawCourseId, batchId, courseFee, discountAmount = 0, discountReason, installments = 1, scholarshipName, scholarshipPct } = req.body;
+    const { leadId, courseId: rawCourseId, batchId, courseFee, discountAmount = 0, discountReason, installments = 1, scholarshipName, scholarshipPct, payment } = req.body;
 
     // Resolve courseId: accept both Course.id (cuid) and CourseId enum (e.g. AI_ENGINEERING)
     let courseId = rawCourseId;
@@ -205,8 +205,39 @@ router.post('/', [
           });
         }
       }
+
+      let enrWithPayment = enr;
+      if (payment && Number(payment.amount) > 0) {
+        const regAmount = Number(payment.amount);
+        const receiptNumber = `FO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        await tx.payment.create({
+          data: {
+            enrollmentId: enr.id,
+            amount: regAmount,
+            method: payment.method || 'CASH',
+            transactionId: payment.transactionId || null,
+            receiptNumber,
+            remarks: payment.remarks || 'Registration fee - admission confirmed',
+            bankAccount: payment.receivedIn || 'CASH',
+            collectedById: req.user.id,
+          },
+        });
+        const newBalance = netFee - regAmount;
+        enrWithPayment = await tx.enrollment.update({
+          where: { id: enr.id },
+          data: { paidAmount: regAmount, balanceDue: newBalance, paymentStatus: newBalance <= 0 ? 'PAID' : 'PARTIAL' },
+          include: { course: true, lead: true },
+        });
+        if (installments > 1) {
+          const firstInstallment = await tx.installment.findFirst({ where: { enrollmentId: enr.id, installmentNo: 1 } });
+          if (firstInstallment && regAmount >= firstInstallment.amount) {
+            await tx.installment.update({ where: { id: firstInstallment.id }, data: { status: 'PAID', paidAt: new Date() } });
+          }
+        }
+      }
+
       await tx.lead.update({ where: { id: leadId }, data: { status: 'WON', convertedAt: new Date() } });
-      return enr;
+      return enrWithPayment;
     });
 
     await logActivity(leadId, req.user.id, 'ENROLLED', { course: enrollment.course.name });

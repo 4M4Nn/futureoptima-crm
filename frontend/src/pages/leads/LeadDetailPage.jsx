@@ -5,7 +5,12 @@ import { motion } from 'framer-motion';
 import { Phone, Mail, MapPin, ArrowLeft, Bot, Send, MessageSquare, CheckSquare, Clock, Plus, Loader2, Sparkles, GraduationCap, CreditCard, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import { COURSES, fmt, fmtDate, fmtDatetime, timeAgo } from '../../utils/constants';
-import { GradeBadge, StatusBadge, Modal, Textarea, LoadingState, ConfirmDialog } from '../../components/ui/index';
+import { GradeBadge, StatusBadge, Modal, Textarea, LoadingState, ConfirmDialog, BankAccountPicker } from '../../components/ui/index';
+
+const REG_FEE_METHOD_OPTS = [
+  { value: 'CASH', label: 'Cash' }, { value: 'UPI', label: 'UPI' },
+  { value: 'BANK_TRANSFER', label: 'Bank Transfer' }, { value: 'CHEQUE', label: 'Cheque' },
+];
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 
@@ -89,6 +94,11 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
   const [discountAmount, setDiscountAmount] = useState('0');
   const [discountReason, setDiscountReason] = useState('');
   const [installments, setInstallments] = useState('1');
+  const [collectRegFee, setCollectRegFee] = useState(false);
+  const [regAmount, setRegAmount] = useState('');
+  const [regMethod, setRegMethod] = useState('CASH');
+  const [regBankAccount, setRegBankAccount] = useState('CASH');
+  const [regTransactionId, setRegTransactionId] = useState('');
 
   const { data: courses } = useQuery({
     queryKey: ['courses'],
@@ -148,6 +158,7 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
     if (mutation.isPending) return;
     setCourseId(''); setCourseFee(''); setDiscountAmount('0');
     setDiscountReason(''); setInstallments('1'); setBatchId('');
+    setCollectRegFee(false); setRegAmount(''); setRegMethod('CASH'); setRegBankAccount('CASH'); setRegTransactionId('');
     onClose();
   };
 
@@ -163,6 +174,13 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
       discountReason: discountReason || undefined,
       installments: Number(installments),
       netFee,
+      payment: collectRegFee && Number(regAmount) > 0 ? {
+        amount: Number(regAmount),
+        method: regMethod,
+        receivedIn: regBankAccount,
+        transactionId: regTransactionId || undefined,
+        remarks: 'Registration fee - admission confirmed',
+      } : undefined,
     });
   };
 
@@ -286,6 +304,39 @@ function EnrollModal({ open, onClose, leadId, interestedCourse }) {
             <p className="text-xs text-indigo-600 text-right">
               ≈ ₹{Math.ceil(netFee / Number(installments)).toLocaleString('en-IN')} × {installments} installments
             </p>
+          )}
+        </div>
+
+        {/* Registration fee — collected upfront to confirm admission */}
+        <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={collectRegFee} onChange={e => setCollectRegFee(e.target.checked)} className="w-4 h-4 accent-amber-500" />
+            <span className="text-sm font-medium text-gray-700">Collect registration fee now? (confirms admission)</span>
+          </label>
+
+          {collectRegFee && (
+            <div className="space-y-3">
+              <div>
+                <label className="label">Registration Fee (₹)</label>
+                <input className="input" type="number" value={regAmount} onChange={e => setRegAmount(e.target.value)} placeholder="500 – 1000" min="0" max={netFee || undefined} />
+              </div>
+              <div>
+                <label className="label">Payment Method</label>
+                <select className="input" value={regMethod} onChange={e => setRegMethod(e.target.value)}>
+                  {REG_FEE_METHOD_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <BankAccountPicker value={regBankAccount} onChange={setRegBankAccount} />
+              <div>
+                <label className="label">Transaction ID</label>
+                <input className="input" value={regTransactionId} onChange={e => setRegTransactionId(e.target.value)} placeholder="Optional" />
+              </div>
+              {Number(regAmount) > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700">
+                  Balance after registration fee: ₹{Math.max(0, netFee - Number(regAmount)).toLocaleString('en-IN')}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
