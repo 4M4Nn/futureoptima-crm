@@ -145,6 +145,23 @@ router.post('/batches', authorize('SUPER_ADMIN', 'ADMIN'), [
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// DELETE /api/courses/batches/:id - Admin only. Enrollments keep their record but lose the batch link.
+router.delete('/batches/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const batch = await prisma.batch.findUnique({ where: { id } });
+    if (!batch) return res.status(404).json({ error: 'Batch not found' });
+
+    await prisma.$transaction([
+      prisma.enrollment.updateMany({ where: { batchId: id }, data: { batchId: null } }),
+      prisma.batch.updateMany({ where: { parentBatchId: id }, data: { parentBatchId: null } }),
+      prisma.batch.delete({ where: { id } }),
+    ]);
+
+    res.json({ message: 'Batch deleted' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/courses/batches/:id/combined-courses - Courses combined into this batch
 router.get('/batches/:id/combined-courses', async (req, res) => {
   try {

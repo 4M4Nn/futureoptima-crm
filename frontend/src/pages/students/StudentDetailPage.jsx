@@ -7,6 +7,7 @@ import api from '../../utils/api';
 import { fmt, fmtDate, fmtDatetime } from '../../utils/constants';
 import { LoadingState, StatusBadge, Modal, Input, Select, ConfirmDialog, BankAccountPicker, BankAccountBadge } from '../../components/ui/index';
 import { useAuthStore } from '../../store/authStore';
+import AssignBatchModal from '../../components/AssignBatchModal';
 import toast from 'react-hot-toast';
 
 async function downloadReceipt(paymentId, receiptNumber) {
@@ -245,6 +246,7 @@ export default function StudentDetailPage() {
   const [loadingAI, setLoadingAI] = useState(false);
   const [showDeleteEnrollment, setShowDeleteEnrollment] = useState(false);
   const [cancelPayment, setCancelPayment] = useState(null);
+  const [showAssignBatch, setShowAssignBatch] = useState(false);
 
   const deleteEnrollmentMutation = useMutation({
     mutationFn: () => api.delete(`/enrollments/${id}`),
@@ -301,6 +303,25 @@ export default function StudentDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Assign batch banner — shown when the student hasn't been scheduled to a batch yet */}
+      {!enrollment.batchId && (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl p-5 border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <GraduationCap className="w-6 h-6 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900 text-base">📚 Batch Not Assigned Yet</h3>
+              <p className="text-gray-500 text-sm">Schedule {enrollment.lead?.name} into a batch</p>
+            </div>
+          </div>
+          <button onClick={() => setShowAssignBatch(true)} className="btn-gold text-sm">
+            <GraduationCap className="w-4 h-4" />Assign Batch
+          </button>
+        </motion.div>
+      )}
 
       {/* Certificate banner — shown when fully paid */}
       <AnimatePresence>
@@ -421,7 +442,14 @@ export default function StudentDetailPage() {
                 ].map(([l, v]) => (
                   <div key={l}>
                     <div className="text-xs text-gray-400 font-medium">{l}</div>
-                    <div className="text-sm text-gray-800 font-medium mt-0.5">{v || '—'}</div>
+                    <div className="text-sm text-gray-800 font-medium mt-0.5 flex items-center gap-2">
+                      {v || '—'}
+                      {l === 'Batch' && (
+                        <button onClick={() => setShowAssignBatch(true)} className="text-xs text-primary-600 hover:underline font-medium">
+                          {enrollment.batchId ? 'Change' : 'Assign'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -536,6 +564,7 @@ export default function StudentDetailPage() {
         message={`Amount: ${fmt(cancelPayment?.amount)}\n\nThis will mark the payment as cancelled and reverse the student's balance. The payment record will be kept for audit purposes.`}
         confirmLabel="Cancel Payment"
       />
+      <AssignBatchModal open={showAssignBatch} onClose={() => setShowAssignBatch(false)} enrollment={enrollment} />
     </div>
   );
 }

@@ -1,12 +1,12 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, Users, Clock, DollarSign, Plus, Edit2, Calendar, MapPin, UserCheck, ToggleLeft, ToggleRight, Link2, ChevronDown, ChevronUp } from 'lucide-react';
+import { BookOpen, Users, Clock, DollarSign, Plus, Edit2, Calendar, MapPin, UserCheck, ToggleLeft, ToggleRight, Link2, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { fmt, fmtDate } from '../utils/constants';
-import { LoadingState, EmptyState, Modal } from '../components/ui/index';
+import { LoadingState, EmptyState, Modal, ConfirmDialog } from '../components/ui/index';
 import { useAuthStore } from '../store/authStore';
 
 const COURSE_ICONS = { AI_ENGINEERING: '🤖', DATA_SCIENCE_AI: '📊', AI_CYBERSECURITY: '🔐', PYTHON_FULLSTACK: '🐍', VIBE_CODING_SAAS: '🚀', DATA_ANALYTICS: '📈', BUSINESS_ANALYTICS: '💼' };
@@ -81,6 +81,17 @@ export default function CoursesPage() {
       setBatchForm(EMPTY_BATCH);
     },
     onError: (err) => toast.error(err?.errors?.[0]?.msg || err?.error || 'Failed to save batch'),
+  });
+
+  const [deleteBatch, setDeleteBatch] = useState(null);
+  const deleteBatchMutation = useMutation({
+    mutationFn: (id) => api.delete(`/courses/batches/${id}`),
+    onSuccess: () => {
+      toast.success('Batch deleted');
+      qc.invalidateQueries({ queryKey: ['all-batches'] });
+      setDeleteBatch(null);
+    },
+    onError: (err) => { toast.error(err?.response?.data?.error || 'Failed to delete batch'); setDeleteBatch(null); },
   });
 
   const toggleBatchActive = async (batch) => {
@@ -345,6 +356,9 @@ export default function CoursesPage() {
                                       </button>
                                       <button onClick={() => toggleBatchActive(batch)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="Toggle Active">
                                         {batch.isActive ? <ToggleRight className="w-3.5 h-3.5 text-green-600" /> : <ToggleLeft className="w-3.5 h-3.5 text-gray-400" />}
+                                      </button>
+                                      <button onClick={() => setDeleteBatch(batch)} className="p-1.5 hover:bg-red-50 rounded-lg text-gray-300 hover:text-red-500 transition-colors" title="Delete batch">
+                                        <Trash2 className="w-3.5 h-3.5" />
                                       </button>
                                     </div>
                                   )}
@@ -624,6 +638,16 @@ export default function CoursesPage() {
           </div>
         </form>
       </Modal>
+      <ConfirmDialog
+        open={!!deleteBatch}
+        onClose={() => setDeleteBatch(null)}
+        onConfirm={() => deleteBatchMutation.mutate(deleteBatch?.id)}
+        loading={deleteBatchMutation.isPending}
+        danger
+        title={`Delete batch — ${deleteBatch?.batchName}?`}
+        message={`${deleteBatch?._count?.enrollments || 0} enrolled student${deleteBatch?._count?.enrollments === 1 ? '' : 's'} will keep their enrollment but lose this batch assignment. This cannot be undone.`}
+        confirmLabel="Delete Batch"
+      />
     </div>
   );
 }

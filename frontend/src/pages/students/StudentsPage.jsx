@@ -7,6 +7,7 @@ import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
 import { LoadingState, EmptyState, Pagination, StatusBadge, ConfirmDialog, Modal, BankAccountPicker } from '../../components/ui/index';
 import { useAuthStore } from '../../store/authStore';
+import AssignBatchModal from '../../components/AssignBatchModal';
 import toast from 'react-hot-toast';
 
 const PAY_METHOD_OPTS = [
@@ -320,6 +321,7 @@ export default function StudentsPage() {
   const { user } = useAuthStore();
   const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
   const [deleteEnrollment, setDeleteEnrollment] = useState(null);
+  const [assigningBatchFor, setAssigningBatchFor] = useState(null);
   const qc = useQueryClient();
 
   const deleteEnrollmentMutation = useMutation({
@@ -401,9 +403,14 @@ export default function StudentsPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-700">{enr.course?.shortName}</td>
                   <td className="px-4 py-3 text-xs text-gray-500">
-                    {enr.batch?.batchName
-                      ? <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-medium">{enr.batch.batchName}</span>
-                      : <span className="text-gray-300">—</span>}
+                    <div className="flex items-center gap-2">
+                      {enr.batch?.batchName
+                        ? <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-medium">{enr.batch.batchName}</span>
+                        : <span className="text-gray-300">—</span>}
+                      <button onClick={() => setAssigningBatchFor(enr)} className="text-primary-600 hover:underline font-medium">
+                        {enr.batch?.batchName ? 'Change' : 'Assign'}
+                      </button>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-sm font-medium">{fmt(enr.netFee)}</td>
                   <td className="px-4 py-3 text-sm font-semibold text-green-600">{fmt(enr.paidAmount)}</td>
@@ -443,6 +450,7 @@ export default function StudentsPage() {
         confirmLabel="Delete Enrollment"
       />
       <QuickAddStudentModal open={showQuickAdd} onClose={() => setShowQuickAdd(false)} />
+      <AssignBatchModal open={!!assigningBatchFor} onClose={() => setAssigningBatchFor(null)} enrollment={assigningBatchFor} />
     </div>
   );
 }
