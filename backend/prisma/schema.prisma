@@ -150,9 +150,30 @@ model User {
   salaries     SalaryRecord[]
   certificates Certificate[]  @relation("GeneratedBy")
   aiCommands   AICommand[]
+  employeeProfiles Employee[]
 
   @@index([email])
   @@index([role])
+}
+
+model Employee {
+  id                 String   @id @default(cuid())
+  userId             String?
+  user               User?    @relation(fields: [userId], references: [id])
+  name               String
+  phone              String?
+  designation        String?
+  department         String?
+  isExternalEmployee Boolean  @default(false)
+  basicSalary        Float
+  bankAccount        BankAccount @default(CASH)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  salaryRecords      SalaryRecord[]
+
+  @@index([isActive])
 }
 
 model Lead {
@@ -483,6 +504,8 @@ model Expense {
 
 model SalaryRecord {
   id                 String    @id @default(cuid())
+  employeeId         String?
+  employee           Employee? @relation(fields: [employeeId], references: [id])
   userId             String?
   user               User?     @relation(fields: [userId], references: [id])
   employeeName       String
@@ -502,6 +525,8 @@ model SalaryRecord {
   notes              String?
   slipGenerated      Boolean     @default(false)
   createdAt          DateTime    @default(now())
+
+  @@unique([employeeId, month, year])
 }
 
 model Certificate {

@@ -206,6 +206,139 @@ router.get('/expenses', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/finance/employees — permanent employee roster
+router.get('/employees', async (req, res) => {
+  try {
+    const { includeInactive } = req.query;
+    const where = includeInactive === 'true' ? {} : { isActive: true };
+    const employees = await prisma.employee.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      include: { user: { select: { name: true, email: true, role: true } } },
+    });
+    res.json(employees);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/finance/employees — add an employee to the permanent roster
+router.post('/employees', [
+  body('name').notEmpty().withMessage('name is required'),
+  body('basicSalary').isFloat({ min: 0 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const { userId, name, phone, designation, department, isExternalEmployee, basicSalary, bankAccount } = req.body;
+    const employee = await prisma.employee.create({
+      data: {
+        userId: isExternalEmployee ? null : (userId || null),
+        name,
+        phone: phone || null,
+        designation: designation || null,
+        department: department || null,
+        isExternalEmployee: Boolean(isExternalEmployee),
+        basicSalary: parseFloat(basicSalary),
+        bankAccount: bankAccount || 'CASH',
+      },
+      include: { user: { select: { name: true, email: true, role: true } } },
+    });
+    res.status(201).json(employee);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/finance/employees/:id — edit roster entry or deactivate (isActive: false)
+router.patch('/employees/:id', async (req, res) => {
+  try {
+    const { name, phone, designation, department, basicSalary, bankAccount, isActive } = req.body;
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (phone !== undefined) data.phone = phone || null;
+    if (designation !== undefined) data.designation = designation || null;
+    if (department !== undefined) data.department = department || null;
+    if (basicSalary !== undefined) data.basicSalary = parseFloat(basicSalary);
+    if (bankAccount !== undefined) data.bankAccount = bankAccount;
+    if (isActive !== undefined) data.isActive = Boolean(isActive);
+    const employee = await prisma.employee.update({ where: { id: req.params.id }, data });
+    res.json(employee);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/finance/salary/status?month=&year= — payroll roster: who's paid / unpaid this month
+router.get('/salary/status', async (req, res) => {
+  try {
+    const now = new Date();
+    const month = parseInt(req.query.month) || now.getMonth() + 1;
+    const year = parseInt(req.query.year) || now.getFullYear();
+
+    const employees = await prisma.employee.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
+    const records = await prisma.salaryRecord.findMany({
+      where: { month, year, employeeId: { in: employees.map(e => e.id) } },
+    });
+    const recordByEmployee = Object.fromEntries(records.map(r => [r.employeeId, r]));
+
+    const data = employees.map(e => ({
+      employee: e,
+      record: recordByEmployee[e.id] || null,
+      status: recordByEmployee[e.id]?.paymentStatus || 'NOT_PAID',
+    }));
+
+    res.json({
+      month, year, data,
+      paidCount: data.filter(d => d.status === 'PAID').length,
+      totalCount: employees.length,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/finance/employees/:id/salary — record/update this month's salary payment for one employee
+router.post('/employees/:id/salary', [
+  body('month').isInt({ min: 1, max: 12 }),
+  body('year').isInt({ min: 2020 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const employee = await prisma.employee.findUnique({ where: { id: req.params.id } });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    const { month, year, basicSalary, bonus = 0, deductions = 0, paymentStatus, paymentDate, paymentMethod, bankAccount, notes } = req.body;
+    const basic = parseFloat(basicSalary ?? employee.basicSalary);
+    const bonusAmt = parseFloat(bonus) || 0;
+    const deductAmt = parseFloat(deductions) || 0;
+    const netSalary = basic + bonusAmt - deductAmt;
+    const status = paymentStatus || 'PAID';
+
+    const record = await prisma.salaryRecord.upsert({
+      where: { employeeId_month_year: { employeeId: employee.id, month: parseInt(month), year: parseInt(year) } },
+      update: {
+        basicSalary: basic, bonus: bonusAmt, deductions: deductAmt, netSalary,
+        paymentStatus: status,
+        paymentDate: status === 'PAID' ? new Date(paymentDate || Date.now()) : null,
+        paymentMethod: paymentMethod || null,
+        bankAccount: bankAccount || employee.bankAccount,
+        notes: notes || null,
+      },
+      create: {
+        employeeId: employee.id,
+        userId: employee.userId,
+        employeeName: employee.name,
+        designation: employee.designation,
+        department: employee.department,
+        isExternalEmployee: employee.isExternalEmployee,
+        month: parseInt(month), year: parseInt(year),
+        basicSalary: basic, bonus: bonusAmt, deductions: deductAmt, netSalary,
+        paymentStatus: status,
+        paymentDate: status === 'PAID' ? new Date(paymentDate || Date.now()) : null,
+        paymentMethod: paymentMethod || null,
+        bankAccount: bankAccount || employee.bankAccount,
+        notes: notes || null,
+      },
+      include: { employee: true },
+    });
+    res.status(201).json(record);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/finance/salary
 router.post('/salary', [
   body('employeeName').notEmpty().withMessage('employeeName is required'),

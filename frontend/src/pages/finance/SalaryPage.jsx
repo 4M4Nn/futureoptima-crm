@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Plus, Download, Users } from 'lucide-react';
+import { Plus, Download, Users, UserPlus, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
@@ -16,6 +16,224 @@ const STATUS_COLORS = {
   PENDING: 'bg-yellow-100 text-yellow-700',
   PAID: 'bg-green-100 text-green-700',
 };
+
+const defaultEmployeeForm = {
+  employeeType: 'external',
+  userId: '',
+  name: '',
+  phone: '',
+  designation: '',
+  department: '',
+  basicSalary: '',
+  bankAccount: 'CASH',
+};
+
+function AddEmployeeModal({ open, onClose }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState(defaultEmployeeForm);
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const { data: usersData } = useQuery({
+    queryKey: ['users-all'],
+    queryFn: () => api.get('/users').then(r => r.data),
+    enabled: open,
+  });
+  const users = usersData?.data || usersData || [];
+  const isExternal = form.employeeType === 'external';
+
+  const handleUserSelect = (userId) => {
+    const user = users.find(u => u.id === userId);
+    setForm(p => ({ ...p, userId, name: user?.name || '' }));
+  };
+
+  const handleClose = () => {
+    if (mutation.isPending) return;
+    setForm(defaultEmployeeForm);
+    onClose();
+  };
+
+  const mutation = useMutation({
+    mutationFn: () => api.post('/finance/employees', {
+      userId: isExternal ? undefined : form.userId || undefined,
+      name: form.name.trim(),
+      phone: form.phone || undefined,
+      designation: form.designation || undefined,
+      department: form.department || undefined,
+      isExternalEmployee: isExternal,
+      basicSalary: Number(form.basicSalary),
+      bankAccount: form.bankAccount,
+    }),
+    onSuccess: () => {
+      toast.success('Employee added to roster!');
+      qc.invalidateQueries({ queryKey: ['employees'] });
+      qc.invalidateQueries({ queryKey: ['payroll-status'] });
+      setForm(defaultEmployeeForm);
+      onClose();
+    },
+    onError: (err) => toast.error(err?.response?.data?.error || 'Failed to add employee'),
+  });
+
+  const canSubmit = form.name.trim().length >= 2 && Number(form.basicSalary) > 0 && (!isExternal ? !!form.userId : true);
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Add Employee to Roster" size="lg">
+      <div className="p-6 space-y-4">
+        <p className="text-sm text-gray-500">Add an employee once — their monthly salary paid/unpaid status will then show automatically on this page.</p>
+
+        <div>
+          <label className="label">Employee Type</label>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => set('employeeType', 'erp')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${form.employeeType === 'erp' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'}`}>
+              ERP User
+            </button>
+            <button type="button" onClick={() => set('employeeType', 'external')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${form.employeeType === 'external' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'}`}>
+              External Employee
+            </button>
+          </div>
+        </div>
+
+        {!isExternal ? (
+          <div>
+            <label className="label">Select Employee *</label>
+            <select className="input" value={form.userId} onChange={e => handleUserSelect(e.target.value)}>
+              <option value="">Select employee</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role?.replace('_', ' ')})</option>)}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label className="label">Full Name *</label>
+            <input className="input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Ravi Kumar" />
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="label">Phone</label>
+            <input className="input" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="Optional" />
+          </div>
+          <div>
+            <label className="label">Designation</label>
+            <input className="input" value={form.designation} onChange={e => set('designation', e.target.value)} placeholder="e.g. Faculty, Trainer" />
+          </div>
+          <div>
+            <label className="label">Department</label>
+            <input className="input" value={form.department} onChange={e => set('department', e.target.value)} placeholder="e.g. Academic, Admin" />
+          </div>
+          <div>
+            <label className="label">Monthly Basic Salary (₹) *</label>
+            <input className="input" type="number" min="0" value={form.basicSalary} onChange={e => set('basicSalary', e.target.value)} placeholder="25000" />
+          </div>
+        </div>
+        <div>
+          <label className="label">Default Payment Account</label>
+          <select className="input" value={form.bankAccount} onChange={e => set('bankAccount', e.target.value)}>
+            {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+          </select>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button className="btn-secondary" onClick={handleClose}>Cancel</button>
+          <button className="btn-primary" onClick={() => mutation.mutate()} disabled={!canSubmit || mutation.isPending}>
+            {mutation.isPending ? 'Adding...' : 'Add Employee'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function PayEmployeeModal({ open, onClose, employee, month, year }) {
+  const qc = useQueryClient();
+  const [bonus, setBonus] = useState('0');
+  const [deductions, setDeductions] = useState('0');
+  const [basicSalary, setBasicSalary] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [bankAccount, setBankAccount] = useState('CASH');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    if (employee) {
+      setBasicSalary(String(employee.basicSalary));
+      setBankAccount(employee.bankAccount || 'CASH');
+      setBonus('0'); setDeductions('0');
+      setPaymentDate(new Date().toISOString().slice(0, 10));
+    }
+  }, [employee]);
+
+  const netSalary = (Number(basicSalary) || 0) + (Number(bonus) || 0) - (Number(deductions) || 0);
+
+  const mutation = useMutation({
+    mutationFn: () => api.post(`/finance/employees/${employee.employee.id}/salary`, {
+      month, year,
+      basicSalary: Number(basicSalary),
+      bonus: Number(bonus) || 0,
+      deductions: Number(deductions) || 0,
+      paymentStatus: 'PAID',
+      paymentDate,
+      paymentMethod,
+      bankAccount,
+    }),
+    onSuccess: () => {
+      toast.success(`${employee.employee.name}'s salary marked as paid!`);
+      qc.invalidateQueries({ queryKey: ['payroll-status'] });
+      qc.invalidateQueries({ queryKey: ['salary-records'] });
+      onClose();
+    },
+    onError: (err) => toast.error(err?.response?.data?.error || 'Failed to record payment'),
+  });
+
+  if (!employee) return null;
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Pay ${employee.employee.name} — ${MONTHS[month - 1]} ${year}`} size="md">
+      <div className="p-6 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="label">Basic Salary (₹)</label>
+            <input className="input" type="number" value={basicSalary} onChange={e => setBasicSalary(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Bonus (₹)</label>
+            <input className="input" type="number" value={bonus} onChange={e => setBonus(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Deductions (₹)</label>
+            <input className="input" type="number" value={deductions} onChange={e => setDeductions(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Payment Date</label>
+            <input className="input" type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
+          </div>
+          <div>
+            <label className="label">Payment Method</label>
+            <select className="input" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Paid From (Account)</label>
+            <select className="input" value={bankAccount} onChange={e => setBankAccount(e.target.value)}>
+              {BANK_ACCOUNTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex justify-between items-center">
+          <span className="text-sm font-medium text-green-800">Net Salary</span>
+          <span className="text-lg font-bold text-green-700">{fmt(netSalary)}</span>
+        </div>
+        <div className="flex justify-end gap-3 pt-2">
+          <button className="btn-secondary" onClick={onClose} disabled={mutation.isPending}>Cancel</button>
+          <button className="btn-primary" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : 'Mark as Paid'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 const defaultForm = {
   employeeType: 'erp',
@@ -38,6 +256,8 @@ const defaultForm = {
 export default function SalaryPage() {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
+  const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [payingEmployee, setPayingEmployee] = useState(null);
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [filterYear, setFilterYear] = useState(now.getFullYear());
   const [form, setForm] = useState(defaultForm);
@@ -51,6 +271,11 @@ export default function SalaryPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['salary-records', filterMonth, filterYear],
     queryFn: () => api.get(`/finance/salary?month=${filterMonth}&year=${filterYear}`).then(r => r.data),
+  });
+
+  const { data: payrollStatus, isLoading: payrollLoading } = useQuery({
+    queryKey: ['payroll-status', filterMonth, filterYear],
+    queryFn: () => api.get(`/finance/salary/status?month=${filterMonth}&year=${filterYear}`).then(r => r.data),
   });
 
   useEffect(() => {
@@ -137,9 +362,70 @@ export default function SalaryPage() {
           <h1 className="text-2xl font-bold text-gray-900">Salary Management</h1>
           <p className="text-sm text-gray-500 mt-1">Manage employee salaries and generate salary slips</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Add Salary Record
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowAddEmployee(true)} className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 transition-colors">
+            <UserPlus className="w-4 h-4" /> Add Employee
+          </button>
+          <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Add One-off Record
+          </button>
+        </div>
+      </div>
+
+      {/* Filter */}
+      <div className="card">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="label text-xs">Month</label>
+            <select value={filterMonth} onChange={e => setFilterMonth(parseInt(e.target.value))} className="input text-sm py-1.5">
+              {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label text-xs">Year</label>
+            <select value={filterYear} onChange={e => setFilterYear(parseInt(e.target.value))} className="input text-sm py-1.5">
+              {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Payroll Status — at-a-glance paid/unpaid reminder for the selected month */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900">Payroll Status — {MONTHS[filterMonth - 1]} {filterYear}</h3>
+          {payrollStatus && (
+            <span className="text-xs text-gray-400">{payrollStatus.paidCount} / {payrollStatus.totalCount} paid</span>
+          )}
+        </div>
+        {payrollLoading ? <LoadingState text="Loading payroll status..." /> : !payrollStatus?.data?.length ? (
+          <EmptyState title="No employees in roster" description="Add employees to track their monthly salary status here." action={<button onClick={() => setShowAddEmployee(true)} className="btn-primary mx-auto"><UserPlus className="w-4 h-4" />Add Employee</button>} />
+        ) : (
+          <div className="space-y-2">
+            {payrollStatus.data.map(({ employee, record, status }) => (
+              <div key={employee.id} className={`flex items-center justify-between p-3 rounded-xl border ${status === 'PAID' ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                <div className="flex items-center gap-3">
+                  {status === 'PAID' ? <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" /> : <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />}
+                  <div>
+                    <div className="font-medium text-gray-900 text-sm">{employee.name}</div>
+                    <div className="text-xs text-gray-500">{employee.designation || (employee.isExternalEmployee ? 'External' : '')}{employee.department ? ` · ${employee.department}` : ''}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <div className={`text-sm font-semibold ${status === 'PAID' ? 'text-green-700' : 'text-amber-700'}`}>{fmt(record?.netSalary ?? employee.basicSalary)}</div>
+                    <div className="text-xs text-gray-400">{status === 'PAID' ? `Paid ${fmtDate(record?.paymentDate)}` : 'Unpaid'}</div>
+                  </div>
+                  {status !== 'PAID' ? (
+                    <button onClick={() => setPayingEmployee({ employee, record })} className="btn-gold text-xs py-1.5 px-3">Pay Now</button>
+                  ) : record ? (
+                    <button onClick={() => downloadSlip(record)} className="btn-secondary text-xs py-1.5 px-3"><Download className="w-3.5 h-3.5" />Slip</button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Summary cards */}
@@ -176,24 +462,6 @@ export default function SalaryPage() {
               {fmt(records.filter(r => r.paymentStatus === 'PENDING').reduce((s, r) => s + r.netSalary, 0))}
             </div>
             <div className="text-xs text-gray-400">{records.filter(r => r.paymentStatus === 'PENDING').length} employees</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter */}
-      <div className="card">
-        <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="label text-xs">Month</label>
-            <select value={filterMonth} onChange={e => setFilterMonth(parseInt(e.target.value))} className="input text-sm py-1.5">
-              {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label text-xs">Year</label>
-            <select value={filterYear} onChange={e => setFilterYear(parseInt(e.target.value))} className="input text-sm py-1.5">
-              {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
           </div>
         </div>
       </div>
@@ -429,6 +697,15 @@ export default function SalaryPage() {
           </div>
         </form>
       </Modal>
+
+      <AddEmployeeModal open={showAddEmployee} onClose={() => setShowAddEmployee(false)} />
+      <PayEmployeeModal
+        open={!!payingEmployee}
+        onClose={() => setPayingEmployee(null)}
+        employee={payingEmployee}
+        month={filterMonth}
+        year={filterYear}
+      />
     </div>
   );
 }

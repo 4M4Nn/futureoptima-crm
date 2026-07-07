@@ -90,7 +90,9 @@ function QuickAddStudentModal({ open, onClose }) {
     onSuccess: (data) => {
       toast.success('Student added successfully!');
       qc.invalidateQueries(['enrollments']);
-      handleClose();
+      setStep(1);
+      setForm(initialQuickAddForm);
+      onClose();
       navigate(`/students/${data.enrollmentId}`);
     },
     onError: (e) => toast.error(e?.response?.data?.error || e?.message || 'Failed to add student'),
