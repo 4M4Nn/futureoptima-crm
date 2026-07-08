@@ -7,7 +7,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 
 export default function LoginPage() {
-  const [form, setForm] = useState({ email: 'admin@futureoptima.in', password: 'FutureOptima@2025' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuthStore();
@@ -92,12 +92,6 @@ export default function LoginPage() {
               {loading ? <><Loader2 className="w-5 h-5 animate-spin" />Signing in...</> : 'Sign In'}
             </button>
           </form>
-
-          <div className="mt-8 p-4 bg-blue-50 rounded-xl border border-blue-100">
-            <p className="text-xs text-blue-700 font-semibold mb-2">Login Credentials</p>
-            <p className="text-xs text-blue-600">Admin: admin@futureoptima.in / FutureOptima@2025</p>
-            <p className="text-xs text-blue-600">Counselor: counselor@futureoptima.in / Counselor@123</p>
-          </div>
 
           <p className="text-center text-xs text-gray-400 mt-6">Powered by Nexora AI Solutions • Secured with JWT</p>
         </motion.div>

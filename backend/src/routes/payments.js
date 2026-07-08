@@ -69,6 +69,7 @@ router.post('/', [
     // Generate PDF receipt asynchronously
     generateReceiptPDF({
       receiptNumber,
+      studentCode: enrollment.studentCode,
       studentName: enrollment.lead.name,
       phone: enrollment.lead.phone,
       courseName: enrollment.course.name,
@@ -126,6 +127,7 @@ router.post('/full-settlement', [
 
     generateReceiptPDF({
       receiptNumber,
+      studentCode: enrollment.studentCode,
       studentName: enrollment.lead.name,
       phone: enrollment.lead.phone,
       courseName: enrollment.course.name,
@@ -141,6 +143,188 @@ router.post('/full-settlement', [
     }).catch(console.error);
 
     res.status(201).json({ ...result, message: 'Full settlement complete! All installments cleared.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/payments/group — record a single lump-sum collection from a coordinator
+// covering multiple students (e.g. a college batch of internship students).
+// isAllocated=true: `allocations` carries a known amount per student -> creates one
+//   real Payment per student and updates their ledgers, tagged with the group.
+// isAllocated=false: amounts per student are unknown -> students are just marked as
+//   "covered" by this collection; no per-student ledger changes are made.
+router.post('/group', [
+  body('coordinatorName').trim().notEmpty(),
+  body('totalAmount').isFloat({ min: 1 }),
+  body('method').isIn(['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'EMI']),
+  body('allocations').isArray({ min: 1 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const {
+      coordinatorName, groupName, totalAmount, method, bankAccount, transactionId,
+      paidAt, remarks, isAllocated, allocations,
+    } = req.body;
+
+    const enrollmentIds = allocations.map(a => a.enrollmentId).filter(Boolean);
+    if (enrollmentIds.length !== allocations.length) {
+      return res.status(400).json({ error: 'Every selected student must have a valid enrollment' });
+    }
+    if (new Set(enrollmentIds).size !== enrollmentIds.length) {
+      return res.status(400).json({ error: 'The same student is selected more than once' });
+    }
+
+    const enrollments = await prisma.enrollment.findMany({
+      where: { id: { in: enrollmentIds } },
+      include: { lead: true, course: true },
+    });
+    if (enrollments.length !== enrollmentIds.length) {
+      return res.status(404).json({ error: 'One or more selected students could not be found' });
+    }
+    const enrollmentMap = new Map(enrollments.map(e => [e.id, e]));
+
+    if (isAllocated) {
+      const sum = allocations.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+      if (Math.abs(sum - Number(totalAmount)) > 1) {
+        return res.status(400).json({ error: `Per-student amounts (₹${sum}) don't add up to the total (₹${totalAmount})` });
+      }
+      for (const a of allocations) {
+        const amt = Number(a.amount) || 0;
+        if (amt <= 0) return res.status(400).json({ error: 'Each student must have an amount greater than ₹0' });
+        const enr = enrollmentMap.get(a.enrollmentId);
+        if (amt > enr.balanceDue + 1) {
+          return res.status(400).json({ error: `${enr.lead.name}'s share (₹${amt}) exceeds their balance due (₹${enr.balanceDue})` });
+        }
+      }
+    }
+
+    const groupReceiptNumber = `FO-GRP-${Date.now().toString().slice(-8)}`;
+    const paidAtDate = paidAt ? new Date(paidAt) : new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      const groupPayment = await tx.groupPayment.create({
+        data: {
+          coordinatorName: coordinatorName.trim(),
+          groupName: groupName?.trim() || null,
+          totalAmount: Number(totalAmount),
+          method,
+          bankAccount: bankAccount || 'CASH',
+          transactionId: transactionId || null,
+          receiptNumber: groupReceiptNumber,
+          paidAt: paidAtDate,
+          remarks: remarks || null,
+          isAllocated: !!isAllocated,
+          collectedById: req.user.id,
+        },
+      });
+
+      const createdPayments = [];
+      let seq = 0;
+      for (const a of allocations) {
+        const enr = enrollmentMap.get(a.enrollmentId);
+        if (isAllocated) {
+          const amt = Number(a.amount);
+          seq += 1;
+          const receiptNumber = `FO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}-${seq}`;
+          const payment = await tx.payment.create({
+            data: {
+              enrollmentId: enr.id,
+              amount: amt,
+              method,
+              transactionId: transactionId || null,
+              receiptNumber,
+              remarks: remarks || `Group payment via ${coordinatorName}`,
+              bankAccount: bankAccount || 'CASH',
+              collectedById: req.user.id,
+              paidAt: paidAtDate,
+              groupPaymentId: groupPayment.id,
+            },
+          });
+          const newPaid = enr.paidAmount + amt;
+          const newBalance = enr.netFee - newPaid;
+          await tx.enrollment.update({
+            where: { id: enr.id },
+            data: { paidAmount: newPaid, balanceDue: newBalance, paymentStatus: newBalance <= 0 ? 'PAID' : 'PARTIAL' },
+          });
+          await tx.groupPaymentStudent.create({
+            data: { groupPaymentId: groupPayment.id, enrollmentId: enr.id, allocatedAmount: amt },
+          });
+          createdPayments.push(payment);
+        } else {
+          await tx.groupPaymentStudent.create({
+            data: { groupPaymentId: groupPayment.id, enrollmentId: enr.id, allocatedAmount: null },
+          });
+        }
+      }
+
+      return { groupPayment, createdPayments };
+    });
+
+    for (const enr of enrollments) {
+      await logActivity(enr.leadId, req.user.id, 'GROUP_PAYMENT', {
+        coordinatorName, groupName, totalAmount, allocated: !!isAllocated,
+      });
+    }
+
+    if (isAllocated) {
+      for (const payment of result.createdPayments) {
+        const enr = enrollmentMap.get(payment.enrollmentId);
+        generateReceiptPDF({
+          receiptNumber: payment.receiptNumber,
+          studentCode: enr.studentCode,
+          studentName: enr.lead.name,
+          phone: enr.lead.phone,
+          courseName: enr.course.name,
+          amount: payment.amount,
+          method,
+          transactionId,
+          paidAt: paidAtDate,
+          netFee: enr.netFee,
+          paidTotal: enr.paidAmount + payment.amount,
+          balance: enr.netFee - (enr.paidAmount + payment.amount),
+          collectedBy: req.user.name,
+          bankAccount: bankAccount || 'CASH',
+        }).catch(console.error);
+      }
+    }
+
+    res.status(201).json({
+      groupPaymentId: result.groupPayment.id,
+      receiptNumber: result.groupPayment.receiptNumber,
+      studentsCount: allocations.length,
+      message: 'Group payment recorded successfully!',
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/group', async (req, res) => {
+  try {
+    const { page = 1, limit = 25 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [data, total] = await Promise.all([
+      prisma.groupPayment.findMany({
+        skip, take: parseInt(limit), orderBy: { paidAt: 'desc' },
+        include: { collectedBy: { select: { name: true } }, _count: { select: { students: true } } },
+      }),
+      prisma.groupPayment.count(),
+    ]);
+    res.json({ data, pagination: { page: parseInt(page), total, pages: Math.ceil(total / parseInt(limit)) } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/group/:id', async (req, res) => {
+  try {
+    const groupPayment = await prisma.groupPayment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        collectedBy: { select: { name: true } },
+        students: {
+          include: { enrollment: { include: { lead: { select: { name: true, phone: true } }, course: { select: { shortName: true } } } } },
+        },
+      },
+    });
+    if (!groupPayment) return res.status(404).json({ error: 'Group payment not found' });
+    res.json(groupPayment);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -182,6 +366,7 @@ router.get('/:id/receipt', async (req, res) => {
     if (!fs.existsSync(filePath)) {
       await generateReceiptPDF({
         receiptNumber: payment.receiptNumber,
+        studentCode: payment.enrollment.studentCode,
         studentName: payment.enrollment.lead.name,
         phone: payment.enrollment.lead.phone,
         courseName: payment.enrollment.course.name,
@@ -215,6 +400,7 @@ router.post('/:id/resend-receipt', async (req, res) => {
 
     const pdfPath = await generateReceiptPDF({
       receiptNumber: payment.receiptNumber,
+      studentCode: payment.enrollment.studentCode,
       studentName: payment.enrollment.lead.name,
       phone: payment.enrollment.lead.phone,
       courseName: payment.enrollment.course.name,

@@ -151,6 +151,7 @@ model User {
   certificates Certificate[]  @relation("GeneratedBy")
   aiCommands   AICommand[]
   employeeProfiles Employee[]
+  groupPayments GroupPayment[]
 
   @@index([email])
   @@index([role])
@@ -180,7 +181,7 @@ model Lead {
   id               String      @id @default(cuid())
   name             String
   email            String?
-  phone            String      @unique
+  phone            String?     @unique
   altPhone         String?
   dob              DateTime?
   gender           String?
@@ -279,6 +280,7 @@ model Batch {
 
 model Enrollment {
   id              String           @id @default(cuid())
+  studentCode     String?          @unique
   leadId          String           @unique
   lead            Lead             @relation(fields: [leadId], references: [id])
   courseId        String
@@ -306,6 +308,15 @@ model Enrollment {
   installments    Installment[]
   documents       Document[]
   certificates    Certificate[]
+  groupPaymentLinks GroupPaymentStudent[]
+}
+
+// Tracks the next sequential number to hand out per financial year (e.g. "2526" for
+// Apr 2025-Mar 2026) for generating student codes like FO2526-0001. Incremented
+// atomically so concurrent enrollments never collide.
+model FinancialYearCounter {
+  fyCode  String @id
+  counter Int    @default(0)
 }
 
 model Payment {
@@ -328,10 +339,53 @@ model Payment {
   cancelledAt    DateTime?
   cancelReason   String?
   bankAccount    BankAccount   @default(CASH)
+  groupPaymentId String?
+  groupPayment   GroupPayment? @relation(fields: [groupPaymentId], references: [id])
   createdAt      DateTime      @default(now())
 
   @@index([enrollmentId])
   @@index([paidAt])
+  @@index([groupPaymentId])
+}
+
+// A single lump-sum collection (e.g. a college coordinator paying for a batch of
+// internship students at once). Split evenly/manually into per-student Payment rows
+// when the breakdown is known, or left unallocated when only the total is known
+// (e.g. importing old records where nobody recorded who paid what).
+model GroupPayment {
+  id              String                @id @default(cuid())
+  coordinatorName String
+  groupName       String?
+  totalAmount     Float
+  method          PaymentMethod
+  bankAccount     BankAccount           @default(CASH)
+  transactionId   String?
+  receiptNumber   String                @unique
+  paidAt          DateTime              @default(now())
+  remarks         String?
+  isAllocated     Boolean               @default(false)
+  collectedById   String
+  collectedBy     User                  @relation(fields: [collectedById], references: [id])
+  createdAt       DateTime              @default(now())
+
+  payments        Payment[]
+  students        GroupPaymentStudent[]
+
+  @@index([paidAt])
+}
+
+// One row per student covered by a GroupPayment. allocatedAmount is null when the
+// per-student split is unknown (student is just marked as "covered by this collection").
+model GroupPaymentStudent {
+  id              String       @id @default(cuid())
+  groupPaymentId  String
+  groupPayment    GroupPayment @relation(fields: [groupPaymentId], references: [id])
+  enrollmentId    String
+  enrollment      Enrollment   @relation(fields: [enrollmentId], references: [id])
+  allocatedAmount Float?
+  createdAt       DateTime     @default(now())
+
+  @@unique([groupPaymentId, enrollmentId])
 }
 
 model Installment {

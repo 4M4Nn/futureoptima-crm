@@ -99,7 +99,7 @@ function QuickAddStudentModal({ open, onClose }) {
     onError: (e) => toast.error(e?.response?.data?.error || e?.message || 'Failed to add student'),
   });
 
-  const step1Valid = form.name.trim().length >= 2 && /^\d{10}$/.test(form.phone.trim());
+  const step1Valid = form.name.trim().length >= 2 && (form.phone.trim() === '' || /^\d{10}$/.test(form.phone.trim()));
   const step2Valid = !!form.courseId && Number(form.courseFee) > 0 && Number(form.installments) >= 1;
 
   return (
@@ -120,7 +120,7 @@ function QuickAddStudentModal({ open, onClose }) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="label">Phone Number *</label>
+                <label className="label">Phone Number</label>
                 <input className="input" value={form.phone} onChange={e => set('phone', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="9876543210" />
               </div>
               <div>
@@ -385,18 +385,19 @@ export default function StudentsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                {['Student', 'Course', 'Batch', 'Total Fee', 'Paid', 'Balance Due', 'Payment Status', 'Enrolled On', 'Actions'].map(h => (
+                {['Student No.', 'Student', 'Course', 'Batch', 'Total Fee', 'Paid', 'Balance Due', 'Payment Status', 'Enrolled On', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left table-header">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={9}><LoadingState /></td></tr>
+                <tr><td colSpan={10}><LoadingState /></td></tr>
               ) : !data?.data?.length ? (
-                <tr><td colSpan={9}><EmptyState title="No students yet" description="Enroll a lead to see them here" /></td></tr>
+                <tr><td colSpan={10}><EmptyState title="No students yet" description="Enroll a lead to see them here" /></td></tr>
               ) : data.data.map((enr, i) => (
                 <motion.tr key={enr.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }} className="table-row">
+                  <td className="px-4 py-3 text-xs font-mono text-gray-500">{enr.studentCode || '—'}</td>
                   <td className="px-4 py-3">
                     <Link to={`/students/${enr.id}`} className="font-semibold text-gray-900 hover:text-primary-600 text-sm">{enr.lead?.name}</Link>
                     <div className="text-xs text-gray-400">{enr.lead?.phone}</div>

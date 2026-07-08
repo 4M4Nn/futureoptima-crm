@@ -4,6 +4,7 @@ import { prisma } from '../utils/prisma.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { logActivity } from '../utils/activityLogger.js';
 import { newWorkbook, addTableSheet, sendWorkbook } from '../utils/excelExport.js';
+import { nextStudentCode } from '../utils/studentCode.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -22,6 +23,7 @@ router.get('/export-excel', async (req, res) => {
 
     const wb = newWorkbook();
     addTableSheet(wb, 'Students', [
+      { header: 'Student No.', key: 'studentCode', width: 16, text: true },
       { header: 'Student Name', key: 'studentName', width: 22 },
       { header: 'Phone', key: 'phone', width: 16, text: true },
       { header: 'Email', key: 'email', width: 24 },
@@ -40,6 +42,7 @@ router.get('/export-excel', async (req, res) => {
       { header: 'Receipt No', key: 'receiptNo', width: 20 },
       { header: 'Certificate Generated', key: 'certGenerated', width: 18 },
     ], enrollments.map(e => ({
+      studentCode: e.studentCode || '',
       studentName: e.lead?.name || '',
       phone: e.lead?.phone || '',
       email: e.lead?.email || '',
@@ -66,7 +69,7 @@ router.get('/export-excel', async (req, res) => {
 // POST /api/enrollments/quick-add — add an existing/walk-in student with enrollment + optional opening payment in one step
 router.post('/quick-add', [
   body('name').trim().isLength({ min: 2 }),
-  body('phone').notEmpty().trim(),
+  body('phone').optional({ checkFalsy: true }).trim(),
   body('courseId').notEmpty(),
   body('courseFee').isFloat({ min: 0 }),
 ], async (req, res) => {
@@ -79,13 +82,16 @@ router.post('/quick-add', [
       courseFee, discountAmount = 0, installments = 1,
       payment,
     } = req.body;
+    const phoneTrimmed = phone ? phone.trim() : null;
 
     const courseRecord = /^[A-Z][A-Z0-9_]+$/.test(rawCourseId)
       ? await prisma.course.findFirst({ where: { courseId: rawCourseId } })
       : await prisma.course.findUnique({ where: { id: rawCourseId } });
     if (!courseRecord) return res.status(404).json({ error: `Course '${rawCourseId}' not found` });
 
-    const existingLead = await prisma.lead.findUnique({ where: { phone: phone.trim() }, include: { enrollment: true } });
+    const existingLead = phoneTrimmed
+      ? await prisma.lead.findUnique({ where: { phone: phoneTrimmed }, include: { enrollment: true } })
+      : null;
     if (existingLead?.enrollment) {
       return res.status(409).json({ error: `${existingLead.name} is already enrolled`, enrollmentId: existingLead.enrollment.id });
     }
@@ -100,13 +106,15 @@ router.post('/quick-add', [
         ? await tx.lead.update({ where: { id: existingLead.id }, data: { status: 'WON', convertedAt: new Date() } })
         : await tx.lead.create({
             data: {
-              name: name.trim(), phone: phone.trim(), email: email || null, city: city || null,
+              name: name.trim(), phone: phoneTrimmed, email: email || null, city: city || null,
               status: 'WON', source: 'OTHER', interestedCourse: courseRecord.courseId, convertedAt: new Date(),
             },
           });
 
+      const studentCode = await nextStudentCode(tx, enrolledAt);
       const enr = await tx.enrollment.create({
         data: {
+          studentCode,
           leadId: leadRecord.id,
           courseId: courseRecord.id,
           batchId: batchId || null,
@@ -190,8 +198,9 @@ router.post('/', [
     const receiptNo = `FO-ENR-${Date.now()}`;
 
     const enrollment = await prisma.$transaction(async (tx) => {
+      const studentCode = await nextStudentCode(tx, new Date());
       const enr = await tx.enrollment.create({
-        data: { leadId, courseId, batchId: batchId || null, courseFee, discountAmount, discountReason, netFee, paidAmount: 0, balanceDue: netFee, receiptNo, scholarshipName, scholarshipPct, paymentStatus: 'PENDING' },
+        data: { studentCode, leadId, courseId, batchId: batchId || null, courseFee, discountAmount, discountReason, netFee, paidAmount: 0, balanceDue: netFee, receiptNo, scholarshipName, scholarshipPct, paymentStatus: 'PENDING' },
         include: { course: true, lead: true },
       });
       if (installments > 1) {

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CreditCard, Plus, CheckCircle, RefreshCw, Download, X } from 'lucide-react';
+import { CreditCard, Plus, CheckCircle, RefreshCw, Download, X, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../../utils/api';
-import { fmt, fmtDatetime, PAYMENT_METHODS } from '../../utils/constants';
+import { fmt, fmtDate, fmtDatetime, PAYMENT_METHODS } from '../../utils/constants';
 import { StatCard, LoadingState, EmptyState, Pagination, Modal, Input, Select, StatusBadge, ConfirmDialog, BankAccountPicker, BankAccountBadge } from '../../components/ui/index';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
@@ -149,9 +149,269 @@ function AddPaymentModal({ open, onClose }) {
   );
 }
 
+const initialGroupForm = {
+  courseId: '', search: '',
+  coordinatorName: '', groupName: '', totalAmount: '', method: 'CASH', bankAccount: 'CASH',
+  transactionId: '', paidAt: new Date().toISOString().slice(0, 10), remarks: '',
+  isAllocated: true,
+};
+
+function GroupPaymentModal({ open, onClose }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState(initialGroupForm);
+  const [selected, setSelected] = useState({}); // enrollmentId -> { name, phone, balanceDue, amount }
+  const [lastResult, setLastResult] = useState(null);
+
+  const { data: coursesData } = useQuery({
+    queryKey: ['courses'],
+    queryFn: () => api.get('/courses').then(r => r.data),
+    enabled: open,
+  });
+  const courses = coursesData || [];
+
+  const { data: enrollData, isFetching: searching } = useQuery({
+    queryKey: ['group-payment-candidates', form.courseId, form.search],
+    queryFn: () => api.get(`/enrollments?courseId=${form.courseId}&search=${encodeURIComponent(form.search)}&limit=100`).then(r => r.data),
+    enabled: open && !!form.courseId,
+  });
+  const candidates = (enrollData?.data || []).filter(e => e.balanceDue > 0);
+
+  const toggleStudent = (enr) => {
+    setSelected(p => {
+      const next = { ...p };
+      if (next[enr.id]) { delete next[enr.id]; }
+      else next[enr.id] = { name: enr.lead?.name, phone: enr.lead?.phone, balanceDue: enr.balanceDue, amount: '' };
+      return next;
+    });
+  };
+  const setAmount = (id, v) => setSelected(p => ({ ...p, [id]: { ...p[id], amount: v.replace(/[^\d.]/g, '') } }));
+
+  const selectedIds = Object.keys(selected);
+  const allocatedSum = selectedIds.reduce((s, id) => s + (Number(selected[id].amount) || 0), 0);
+  const total = Number(form.totalAmount) || 0;
+  const amountsMatch = !form.isAllocated || (selectedIds.length > 0 && Math.abs(allocatedSum - total) < 1);
+
+  const canSubmit = form.coordinatorName.trim() && total > 0 && selectedIds.length > 0
+    && (!form.isAllocated || (amountsMatch && selectedIds.every(id => Number(selected[id].amount) > 0)));
+
+  const handleClose = () => {
+    if (mutation.isPending) return;
+    setForm(initialGroupForm);
+    setSelected({});
+    setLastResult(null);
+    onClose();
+  };
+
+  const mutation = useMutation({
+    mutationFn: () => api.post('/payments/group', {
+      coordinatorName: form.coordinatorName.trim(),
+      groupName: form.groupName.trim() || undefined,
+      totalAmount: total,
+      method: form.method,
+      bankAccount: form.bankAccount,
+      transactionId: form.transactionId || undefined,
+      paidAt: form.paidAt,
+      remarks: form.remarks || undefined,
+      isAllocated: form.isAllocated,
+      allocations: selectedIds.map(id => ({ enrollmentId: id, amount: form.isAllocated ? Number(selected[id].amount) : undefined })),
+    }).then(r => r.data),
+    onSuccess: (data) => {
+      toast.success('Group payment recorded!');
+      qc.invalidateQueries(['group-payments']);
+      qc.invalidateQueries(['payments']);
+      qc.invalidateQueries(['payment-stats']);
+      qc.invalidateQueries(['enrollments']);
+      setLastResult(data);
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.message || 'Failed to record group payment'),
+  });
+
+  const METHOD_OPTS = PAYMENT_METHODS.map(m => ({ value: m, label: m.replace(/_/g, ' ') }));
+  const courseOpts = courses.map(c => ({ value: c.id, label: c.name }));
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Record Group Payment" size="lg">
+      <div className="p-6 space-y-4">
+        {lastResult ? (
+          <div className="text-center py-6 space-y-4">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Group Payment Recorded!</h3>
+              <p className="text-gray-500 text-sm">Receipt No: {lastResult.receiptNumber} · {lastResult.studentsCount} student(s)</p>
+            </div>
+            <button onClick={handleClose} className="btn-secondary mx-auto">Close</button>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
+              Use this when one coordinator pays a lump sum covering several students at once (e.g. an internship batch from a college).
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input label="Coordinator Name *" value={form.coordinatorName} onChange={e => setForm(p => ({ ...p, coordinatorName: e.target.value }))} placeholder="e.g. Prof. Rajan" />
+              <Input label="College / Group Name" value={form.groupName} onChange={e => setForm(p => ({ ...p, groupName: e.target.value }))} placeholder="e.g. XYZ Engineering College" />
+              <Input label="Total Amount Received (₹) *" type="number" value={form.totalAmount} onChange={e => setForm(p => ({ ...p, totalAmount: e.target.value }))} placeholder="150000" />
+              <Select label="Payment Method *" value={form.method} onChange={v => setForm(p => ({ ...p, method: v }))} options={METHOD_OPTS} />
+              <Input label="Transaction / Ref ID" value={form.transactionId} onChange={e => setForm(p => ({ ...p, transactionId: e.target.value }))} placeholder="UPI ref / cheque no" />
+              <Input label="Date" type="date" value={form.paidAt} onChange={e => setForm(p => ({ ...p, paidAt: e.target.value }))} />
+            </div>
+            <BankAccountPicker value={form.bankAccount} onChange={v => setForm(p => ({ ...p, bankAccount: v }))} />
+            <Input label="Remarks" value={form.remarks} onChange={e => setForm(p => ({ ...p, remarks: e.target.value }))} placeholder="Optional" />
+
+            <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-3 border border-gray-200">
+              <input type="checkbox" id="isAllocated" checked={form.isAllocated} onChange={e => setForm(p => ({ ...p, isAllocated: e.target.checked }))} className="w-4 h-4" />
+              <label htmlFor="isAllocated" className="text-sm text-gray-700 cursor-pointer">
+                I know each student's exact share <span className="text-gray-400">(uncheck if you only know the total — students will be marked as covered without updating their individual balance)</span>
+              </label>
+            </div>
+
+            <div>
+              <label className="label">Select Students</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                <Select value={form.courseId} onChange={v => setForm(p => ({ ...p, courseId: v }))} options={courseOpts} placeholder="Select course..." />
+                <input className="input" value={form.search} onChange={e => setForm(p => ({ ...p, search: e.target.value }))} placeholder="Search by name or phone..." disabled={!form.courseId} />
+              </div>
+              {!form.courseId ? (
+                <p className="text-xs text-gray-400 py-4 text-center">Select a course to list students with a balance due.</p>
+              ) : searching ? (
+                <p className="text-xs text-gray-400 py-4 text-center">Loading students...</p>
+              ) : !candidates.length ? (
+                <p className="text-xs text-gray-400 py-4 text-center">No students with a pending balance found.</p>
+              ) : (
+                <div className="border border-gray-200 rounded-xl max-h-56 overflow-y-auto divide-y divide-gray-100">
+                  {candidates.map(enr => {
+                    const isSel = !!selected[enr.id];
+                    return (
+                      <div key={enr.id} className={`flex items-center gap-3 p-2.5 ${isSel ? 'bg-primary-50' : ''}`}>
+                        <input type="checkbox" checked={isSel} onChange={() => toggleStudent(enr)} className="w-4 h-4 flex-shrink-0" />
+                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleStudent(enr)}>
+                          <div className="text-sm font-medium text-gray-900 truncate">{enr.lead?.name}</div>
+                          <div className="text-xs text-gray-400">{enr.lead?.phone || 'No phone'} · Balance {fmt(enr.balanceDue)}</div>
+                        </div>
+                        {isSel && form.isAllocated && (
+                          <input
+                            className="input w-28 text-sm flex-shrink-0"
+                            value={selected[enr.id].amount}
+                            onChange={e => setAmount(enr.id, e.target.value)}
+                            placeholder="Amount"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {selectedIds.length > 0 && (
+              <div className={`rounded-xl p-3 text-sm border ${form.isAllocated && !amountsMatch ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
+                {selectedIds.length} student(s) selected
+                {form.isAllocated && <> · Allocated {fmt(allocatedSum)} of {fmt(total)} total{!amountsMatch && ' — amounts must add up to the total'}</>}
+                {!form.isAllocated && <> · Amount recorded as one lump sum ({fmt(total)}), not split per student</>}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button className="btn-secondary" onClick={handleClose}>Cancel</button>
+              <button className="btn-primary" onClick={() => mutation.mutate()} disabled={!canSubmit || mutation.isPending}>
+                {mutation.isPending ? 'Recording...' : <><Users className="w-4 h-4" />Record Group Payment</>}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function GroupPaymentsSection() {
+  const [page, setPage] = useState(1);
+  const [viewId, setViewId] = useState(null);
+  const { data, isLoading } = useQuery({ queryKey: ['group-payments', page], queryFn: () => api.get(`/payments/group?page=${page}&limit=10`).then(r => r.data) });
+  const { data: detail } = useQuery({
+    queryKey: ['group-payment', viewId],
+    queryFn: () => api.get(`/payments/group/${viewId}`).then(r => r.data),
+    enabled: !!viewId,
+  });
+
+  if (!isLoading && !data?.data?.length) return null;
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="section-title">Group Payments</h3>
+        <p className="text-xs text-gray-400">Lump-sum collections from coordinators covering multiple students</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              {['Coordinator', 'Group', 'Amount', 'Students', 'Split', 'Date', ''].map(h => (
+                <th key={h} className="px-4 py-3 text-left table-header">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr><td colSpan={7}><LoadingState /></td></tr>
+            ) : data.data.map(g => (
+              <tr key={g.id} className="table-row">
+                <td className="px-4 py-3 text-sm font-medium text-gray-900">{g.coordinatorName}</td>
+                <td className="px-4 py-3 text-xs text-gray-600">{g.groupName || '—'}</td>
+                <td className="px-4 py-3 text-sm font-bold text-green-700">{fmt(g.totalAmount)}</td>
+                <td className="px-4 py-3 text-xs text-gray-600">{g._count?.students ?? 0}</td>
+                <td className="px-4 py-3">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${g.isAllocated ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {g.isAllocated ? 'Per-student' : 'Unallocated'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(g.paidAt)}</td>
+                <td className="px-4 py-3">
+                  <button onClick={() => setViewId(g.id)} className="text-xs text-primary-600 hover:underline">View</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {data?.pagination && <div className="px-4 pb-4"><Pagination page={data.pagination.page} pages={data.pagination.pages} total={data.pagination.total} onPage={setPage} /></div>}
+
+      <Modal open={!!viewId} onClose={() => setViewId(null)} title="Group Payment Details" size="lg">
+        {detail && (
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><div className="text-xs text-gray-400">Coordinator</div><div className="font-medium">{detail.coordinatorName}</div></div>
+              <div><div className="text-xs text-gray-400">College / Group</div><div className="font-medium">{detail.groupName || '—'}</div></div>
+              <div><div className="text-xs text-gray-400">Total Amount</div><div className="font-medium">{fmt(detail.totalAmount)}</div></div>
+              <div><div className="text-xs text-gray-400">Collected By</div><div className="font-medium">{detail.collectedBy?.name}</div></div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-400 mb-1">Covered Students ({detail.students.length})</div>
+              <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                {detail.students.map(s => (
+                  <div key={s.id} className="flex items-center justify-between p-2.5 text-sm">
+                    <div>
+                      <div className="font-medium text-gray-900">{s.enrollment?.lead?.name}</div>
+                      <div className="text-xs text-gray-400">{s.enrollment?.lead?.phone || 'No phone'} · {s.enrollment?.course?.shortName}</div>
+                    </div>
+                    <div className="text-sm font-semibold">{s.allocatedAmount != null ? fmt(s.allocatedAmount) : <span className="text-amber-600 text-xs">Unallocated</span>}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
 export default function PaymentsPage() {
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
+  const [showGroupAdd, setShowGroupAdd] = useState(false);
   const [cancelPayment, setCancelPayment] = useState(null);
   const { user } = useAuthStore();
   const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
@@ -173,7 +433,10 @@ export default function PaymentsPage() {
           <h1 className="page-title">Payments & Fees</h1>
           <p className="text-gray-500 text-sm">PDF receipts auto-generated on every payment</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn-primary flex-shrink-0"><Plus className="w-4 h-4" />Record Payment</button>
+        <div className="flex gap-2 flex-shrink-0">
+          <button onClick={() => setShowGroupAdd(true)} className="btn-secondary"><Users className="w-4 h-4" />Group Payment</button>
+          <button onClick={() => setShowAdd(true)} className="btn-primary"><Plus className="w-4 h-4" />Record Payment</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -249,7 +512,10 @@ export default function PaymentsPage() {
         {data?.pagination && <div className="px-4 pb-4"><Pagination page={data.pagination.page} pages={data.pagination.pages} total={data.pagination.total} onPage={setPage} /></div>}
       </div>
 
+      <GroupPaymentsSection />
+
       <AddPaymentModal open={showAdd} onClose={() => setShowAdd(false)} />
+      <GroupPaymentModal open={showGroupAdd} onClose={() => setShowGroupAdd(false)} />
       <ConfirmDialog
         open={!!cancelPayment}
         onClose={() => setCancelPayment(null)}

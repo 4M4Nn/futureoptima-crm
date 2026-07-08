@@ -25,7 +25,7 @@ function numToWords(n) {
 const BANK_LABELS = { HDFC: 'HDFC Bank', ICICI: 'ICICI Bank', IDFC: 'IDFC Bank', CASH: 'Cash' };
 
 export async function generateReceiptPDF(data) {
-  const { receiptNumber, studentName, phone, courseName, amount, method, transactionId, paidAt, netFee, paidTotal, balance, collectedBy, bankAccount } = data;
+  const { receiptNumber, studentCode, studentName, phone, courseName, amount, method, transactionId, paidAt, netFee, paidTotal, balance, collectedBy, bankAccount } = data;
   const filename = `receipt_${receiptNumber.replace(/[^a-z0-9]/gi, '_')}.pdf`;
   const filePath = path.join(receiptsDir, filename);
 
@@ -60,7 +60,10 @@ export async function generateReceiptPDF(data) {
 
     // Student
     doc.fillColor('#1B2B6B').fontSize(9.5).font('Helvetica-Bold').text('STUDENT DETAILS', col1, y); y += 14;
-    for (const [l, v] of [['Name', studentName], ['Phone', phone], ['Course', courseName]]) {
+    const studentFields = studentCode
+      ? [['Student No.', studentCode], ['Name', studentName], ['Phone', phone || '-'], ['Course', courseName]]
+      : [['Name', studentName], ['Phone', phone || '-'], ['Course', courseName]];
+    for (const [l, v] of studentFields) {
       doc.fillColor('#374151').fontSize(8.5).font('Helvetica-Bold').text(`${l}:`, col1, y, { width: 60 });
       doc.font('Helvetica').text(v, col1 + 65, y, { width: doc.page.width - 120 }); y += 14;
     }

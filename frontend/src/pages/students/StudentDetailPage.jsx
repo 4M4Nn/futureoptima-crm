@@ -289,7 +289,11 @@ export default function StudentDetailPage() {
         <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 flex-shrink-0 mt-0.5"><ArrowLeft className="w-5 h-5" /></button>
         <div className="flex-1 min-w-0">
           <h1 className="page-title truncate">{enrollment.lead?.name}</h1>
-          <p className="text-gray-500 text-sm">{enrollment.lead?.phone} • {enrollment.receiptNo}</p>
+          <p className="text-gray-500 text-sm">
+            {enrollment.studentCode && <span className="font-mono font-semibold text-gray-700">{enrollment.studentCode}</span>}
+            {enrollment.studentCode && ' • '}
+            {enrollment.lead?.phone || 'No phone'} • {enrollment.receiptNo}
+          </p>
         </div>
         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 flex-shrink-0">
           <div className="flex gap-1.5">
@@ -429,6 +433,7 @@ export default function StudentDetailPage() {
             {tab === 'info' && (
               <div className="p-4 grid grid-cols-2 gap-4">
                 {[
+                  ['Student No.', enrollment.studentCode || '—'],
                   ['Course', enrollment.course?.name],
                   ['Batch', enrollment.batch?.batchName || '—'],
                   ['Mode', enrollment.batch?.mode || '—'],
