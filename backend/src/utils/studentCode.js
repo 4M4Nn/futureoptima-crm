@@ -22,3 +22,25 @@ export async function nextStudentCode(tx, enrolledAt, isInternship = false) {
   const prefix = isInternship ? 'FOI' : 'FO';
   return `${prefix}${fyCode}-${String(counter).padStart(4, '0')}`;
 }
+
+const CODE_PATTERN = /^FO(I)?(\d{4})-(\d{4})$/;
+
+// Must be called inside a prisma $transaction (tx). If the deleted student held the
+// most-recently-issued number in its FY/type bucket, rolls the counter back by one so
+// the next enrollment reuses it instead of leaving a gap. Uses a single conditional
+// UPDATE (only decrements if the counter still equals this code's sequence number) so
+// it's safe even if another enrollment was created in the same instant — deleting a
+// student in the middle of a sequence intentionally leaves that gap rather than
+// renumbering everyone after it, which would change other students' issued codes.
+export async function releaseStudentCode(tx, studentCode) {
+  if (!studentCode) return;
+  const match = studentCode.match(CODE_PATTERN);
+  if (!match) return;
+  const [, isInternshipFlag, fyCode, seqStr] = match;
+  const counterKey = isInternshipFlag ? `${fyCode}-INT` : fyCode;
+  const seq = parseInt(seqStr, 10);
+  await tx.financialYearCounter.updateMany({
+    where: { fyCode: counterKey, counter: seq },
+    data: { counter: { decrement: 1 } },
+  });
+}

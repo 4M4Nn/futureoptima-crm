@@ -4,7 +4,7 @@ import { prisma } from '../utils/prisma.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { logActivity } from '../utils/activityLogger.js';
 import { newWorkbook, addTableSheet, sendWorkbook } from '../utils/excelExport.js';
-import { nextStudentCode } from '../utils/studentCode.js';
+import { nextStudentCode, releaseStudentCode } from '../utils/studentCode.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -341,6 +341,7 @@ router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
       await tx.document.deleteMany({ where: { enrollmentId: id } });
       await tx.enrollment.delete({ where: { id } });
       await tx.lead.update({ where: { id: enrollment.lead.id }, data: { status: 'QUALIFIED', convertedAt: null } });
+      await releaseStudentCode(tx, enrollment.studentCode);
     });
 
     await logActivity(enrollment.lead.id, req.user.id, 'ENROLLMENT_DELETED', {

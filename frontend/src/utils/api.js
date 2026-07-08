@@ -21,7 +21,13 @@ api.interceptors.response.use(
       useAuthStore.getState().logout();
       window.location.href = '/login';
     }
-    return Promise.reject(err.response?.data || err);
+    // Keep the real axios error (so `err.response.data.*` works) while also
+    // shimming the flat `err.error` / `err.errors` shape older call sites expect.
+    if (err.response?.data) {
+      err.error = err.response.data.error;
+      err.errors = err.response.data.errors;
+    }
+    return Promise.reject(err);
   }
 );
 
