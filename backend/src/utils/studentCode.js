@@ -9,12 +9,16 @@ export function getFYCode(date) {
 
 // Must be called inside a prisma $transaction (tx) — atomically increments the
 // per-FY counter so concurrent enrollments never get the same student code.
-export async function nextStudentCode(tx, enrolledAt) {
+// Internship students get their own "FOI" series (separate counter bucket) so
+// their numbers never collide or interleave with regular course students' "FO" series.
+export async function nextStudentCode(tx, enrolledAt, isInternship = false) {
   const fyCode = getFYCode(enrolledAt || new Date());
+  const counterKey = isInternship ? `${fyCode}-INT` : fyCode;
   const { counter } = await tx.financialYearCounter.upsert({
-    where: { fyCode },
-    create: { fyCode, counter: 1 },
+    where: { fyCode: counterKey },
+    create: { fyCode: counterKey, counter: 1 },
     update: { counter: { increment: 1 } },
   });
-  return `FO${fyCode}-${String(counter).padStart(4, '0')}`;
+  const prefix = isInternship ? 'FOI' : 'FO';
+  return `${prefix}${fyCode}-${String(counter).padStart(4, '0')}`;
 }

@@ -245,13 +245,23 @@ export default function StudentDetailPage() {
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [loadingAI, setLoadingAI] = useState(false);
   const [showDeleteEnrollment, setShowDeleteEnrollment] = useState(false);
+  const [forceDeleteWarning, setForceDeleteWarning] = useState(null);
   const [cancelPayment, setCancelPayment] = useState(null);
   const [showAssignBatch, setShowAssignBatch] = useState(false);
 
   const deleteEnrollmentMutation = useMutation({
-    mutationFn: () => api.delete(`/enrollments/${id}`),
+    mutationFn: (force) => api.delete(`/enrollments/${id}${force ? '?confirm=true' : ''}`),
     onSuccess: () => { toast.success('Enrollment deleted'); navigate('/students'); },
-    onError: (e) => { toast.error(e?.response?.data?.error || 'Delete failed'); setShowDeleteEnrollment(false); },
+    onError: (e, force) => {
+      const data = e?.response?.data;
+      setShowDeleteEnrollment(false);
+      if (!force && data?.requiresConfirmation) {
+        setForceDeleteWarning(data.error);
+      } else {
+        toast.error(data?.error || 'Delete failed');
+        setForceDeleteWarning(null);
+      }
+    },
   });
 
   const cancelPaymentMutation = useMutation({
@@ -552,12 +562,22 @@ export default function StudentDetailPage() {
       <ConfirmDialog
         open={showDeleteEnrollment}
         onClose={() => setShowDeleteEnrollment(false)}
-        onConfirm={() => deleteEnrollmentMutation.mutate()}
+        onConfirm={() => deleteEnrollmentMutation.mutate(false)}
         loading={deleteEnrollmentMutation.isPending}
         danger
         title={`Delete enrollment — ${enrollment.lead?.name}?`}
-        message={`This will remove the enrollment and reset the lead status to QUALIFIED.\n\nAll cancelled payments will be kept for records. Active payments must be cancelled first.`}
+        message={`This will remove the enrollment record and reset the lead status to QUALIFIED.\n\nThis cannot be undone.`}
         confirmLabel="Delete Enrollment"
+      />
+      <ConfirmDialog
+        open={!!forceDeleteWarning}
+        onClose={() => setForceDeleteWarning(null)}
+        onConfirm={() => deleteEnrollmentMutation.mutate(true)}
+        loading={deleteEnrollmentMutation.isPending}
+        danger
+        title={`Delete anyway — ${enrollment.lead?.name}?`}
+        message={`${forceDeleteWarning}\n\nThis cannot be undone.`}
+        confirmLabel="Delete Everything"
       />
       <ConfirmDialog
         open={!!cancelPayment}

@@ -111,7 +111,7 @@ router.post('/quick-add', [
             },
           });
 
-      const studentCode = await nextStudentCode(tx, enrolledAt);
+      const studentCode = await nextStudentCode(tx, enrolledAt, courseRecord.courseId === 'INTERNSHIP');
       const enr = await tx.enrollment.create({
         data: {
           studentCode,
@@ -184,12 +184,11 @@ router.post('/', [
     const { leadId, courseId: rawCourseId, batchId, courseFee, discountAmount = 0, discountReason, installments = 1, scholarshipName, scholarshipPct, payment } = req.body;
 
     // Resolve courseId: accept both Course.id (cuid) and CourseId enum (e.g. AI_ENGINEERING)
-    let courseId = rawCourseId;
-    if (rawCourseId && /^[A-Z][A-Z0-9_]+$/.test(rawCourseId)) {
-      const course = await prisma.course.findFirst({ where: { courseId: rawCourseId } });
-      if (!course) return res.status(404).json({ error: `Course '${rawCourseId}' not found` });
-      courseId = course.id;
-    }
+    const courseRecord = /^[A-Z][A-Z0-9_]+$/.test(rawCourseId)
+      ? await prisma.course.findFirst({ where: { courseId: rawCourseId } })
+      : await prisma.course.findUnique({ where: { id: rawCourseId } });
+    if (!courseRecord) return res.status(404).json({ error: `Course '${rawCourseId}' not found` });
+    const courseId = courseRecord.id;
 
     const existing = await prisma.enrollment.findUnique({ where: { leadId } });
     if (existing) return res.status(409).json({ error: 'Lead already enrolled', enrollmentId: existing.id });
@@ -198,7 +197,7 @@ router.post('/', [
     const receiptNo = `FO-ENR-${Date.now()}`;
 
     const enrollment = await prisma.$transaction(async (tx) => {
-      const studentCode = await nextStudentCode(tx, new Date());
+      const studentCode = await nextStudentCode(tx, new Date(), courseRecord.courseId === 'INTERNSHIP');
       const enr = await tx.enrollment.create({
         data: { studentCode, leadId, courseId, batchId: batchId || null, courseFee, discountAmount, discountReason, netFee, paidAmount: 0, balanceDue: netFee, receiptNo, scholarshipName, scholarshipPct, paymentStatus: 'PENDING' },
         include: { course: true, lead: true },
@@ -319,20 +318,34 @@ router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
       where: { id },
       include: {
         lead: { select: { id: true, name: true } },
-        _count: { select: { payments: true } },
+        _count: { select: { payments: true, certificates: true } },
       },
     });
     if (!enrollment) return res.status(404).json({ error: 'Enrollment not found' });
-    if (enrollment._count.payments > 0) {
-      return res.status(400).json({ error: 'Cannot delete enrollment with payment history' });
+
+    const hasPayments = enrollment._count.payments > 0;
+    if (hasPayments && req.query.confirm !== 'true') {
+      return res.status(409).json({
+        error: `This student has ${enrollment._count.payments} recorded payment(s) totalling ₹${enrollment.paidAmount}. Deleting will permanently remove that payment history too.`,
+        requiresConfirmation: true,
+        paymentsCount: enrollment._count.payments,
+        totalPaid: enrollment.paidAmount,
+      });
     }
 
-    await prisma.installment.deleteMany({ where: { enrollmentId: id } });
-    await prisma.document.deleteMany({ where: { enrollmentId: id } });
-    await prisma.enrollment.delete({ where: { id } });
-    await prisma.lead.update({ where: { id: enrollment.lead.id }, data: { status: 'QUALIFIED', convertedAt: null } });
+    await prisma.$transaction(async (tx) => {
+      await tx.groupPaymentStudent.deleteMany({ where: { enrollmentId: id } });
+      await tx.payment.deleteMany({ where: { enrollmentId: id } });
+      await tx.certificate.deleteMany({ where: { enrollmentId: id } });
+      await tx.installment.deleteMany({ where: { enrollmentId: id } });
+      await tx.document.deleteMany({ where: { enrollmentId: id } });
+      await tx.enrollment.delete({ where: { id } });
+      await tx.lead.update({ where: { id: enrollment.lead.id }, data: { status: 'QUALIFIED', convertedAt: null } });
+    });
 
-    await logActivity(enrollment.lead.id, req.user.id, 'ENROLLMENT_DELETED', { studentName: enrollment.lead.name });
+    await logActivity(enrollment.lead.id, req.user.id, 'ENROLLMENT_DELETED', {
+      studentName: enrollment.lead.name, paymentsDeleted: enrollment._count.payments, totalPaid: enrollment.paidAmount,
+    });
     res.json({ message: 'Enrollment deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

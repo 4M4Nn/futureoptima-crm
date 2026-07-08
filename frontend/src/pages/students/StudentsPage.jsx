@@ -321,13 +321,29 @@ export default function StudentsPage() {
   const { user } = useAuthStore();
   const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
   const [deleteEnrollment, setDeleteEnrollment] = useState(null);
+  const [forceDeleteTarget, setForceDeleteTarget] = useState(null);
   const [assigningBatchFor, setAssigningBatchFor] = useState(null);
   const qc = useQueryClient();
 
   const deleteEnrollmentMutation = useMutation({
-    mutationFn: (id) => api.delete(`/enrollments/${id}`),
-    onSuccess: () => { toast.success('Enrollment deleted'); qc.invalidateQueries(['enrollments']); setDeleteEnrollment(null); },
-    onError: (e) => toast.error(e?.response?.data?.error || 'Delete failed'),
+    mutationFn: ({ id, force }) => api.delete(`/enrollments/${id}${force ? '?confirm=true' : ''}`),
+    onSuccess: () => {
+      toast.success('Enrollment deleted');
+      qc.invalidateQueries(['enrollments']);
+      setDeleteEnrollment(null);
+      setForceDeleteTarget(null);
+    },
+    onError: (e, variables) => {
+      const data = e?.response?.data;
+      if (!variables.force && data?.requiresConfirmation) {
+        setForceDeleteTarget({ enrollment: deleteEnrollment, message: data.error });
+        setDeleteEnrollment(null);
+      } else {
+        toast.error(data?.error || 'Delete failed');
+        setDeleteEnrollment(null);
+        setForceDeleteTarget(null);
+      }
+    },
   });
 
   return (
@@ -443,12 +459,22 @@ export default function StudentsPage() {
       <ConfirmDialog
         open={!!deleteEnrollment}
         onClose={() => setDeleteEnrollment(null)}
-        onConfirm={() => deleteEnrollmentMutation.mutate(deleteEnrollment?.id)}
+        onConfirm={() => deleteEnrollmentMutation.mutate({ id: deleteEnrollment?.id, force: false })}
         loading={deleteEnrollmentMutation.isPending}
         danger
         title={`Delete enrollment — ${deleteEnrollment?.lead?.name}?`}
-        message={`This will remove the enrollment record and reset the lead status to QUALIFIED.\n\nPayment history (if any) will be kept. This cannot be undone.`}
+        message={`This will remove the enrollment record and reset the lead status to QUALIFIED.\n\nThis cannot be undone.`}
         confirmLabel="Delete Enrollment"
+      />
+      <ConfirmDialog
+        open={!!forceDeleteTarget}
+        onClose={() => setForceDeleteTarget(null)}
+        onConfirm={() => deleteEnrollmentMutation.mutate({ id: forceDeleteTarget?.enrollment?.id, force: true })}
+        loading={deleteEnrollmentMutation.isPending}
+        danger
+        title={`Delete anyway — ${forceDeleteTarget?.enrollment?.lead?.name}?`}
+        message={`${forceDeleteTarget?.message}\n\nThis cannot be undone.`}
+        confirmLabel="Delete Everything"
       />
       <QuickAddStudentModal open={showQuickAdd} onClose={() => setShowQuickAdd(false)} />
       <AssignBatchModal open={!!assigningBatchFor} onClose={() => setAssigningBatchFor(null)} enrollment={assigningBatchFor} />
