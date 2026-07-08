@@ -155,16 +155,18 @@ router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (lead.enrollment) return res.status(400).json({ error: 'Cannot delete lead with enrollment. Delete enrollment first.' });
 
-    await prisma.activityLog.deleteMany({ where: { leadId: id } });
-    await prisma.aISession.deleteMany({ where: { leadId: id } });
-    await prisma.whatsAppMessage.deleteMany({ where: { leadId: id } });
-    await prisma.callLog.deleteMany({ where: { leadId: id } });
-    await prisma.note.deleteMany({ where: { leadId: id } });
-    await prisma.task.deleteMany({ where: { leadId: id } });
-    await prisma.lead.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.activityLog.deleteMany({ where: { leadId: id } });
+      await tx.aISession.deleteMany({ where: { leadId: id } });
+      await tx.whatsAppMessage.deleteMany({ where: { leadId: id } });
+      await tx.callLog.deleteMany({ where: { leadId: id } });
+      await tx.note.deleteMany({ where: { leadId: id } });
+      await tx.task.deleteMany({ where: { leadId: id } });
+      await tx.lead.delete({ where: { id } });
+    });
 
     res.json({ message: 'Lead deleted successfully' });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error('Delete lead error:', err); res.status(500).json({ error: err.message }); }
 });
 
 router.delete('/:id/notes/:noteId', async (req, res) => {

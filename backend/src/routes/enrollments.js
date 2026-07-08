@@ -347,7 +347,7 @@ router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
       studentName: enrollment.lead.name, paymentsDeleted: enrollment._count.payments, totalPaid: enrollment.paidAmount,
     });
     res.json({ message: 'Enrollment deleted' });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error('Delete enrollment error:', err); res.status(500).json({ error: err.message }); }
 });
 
 export default router;
