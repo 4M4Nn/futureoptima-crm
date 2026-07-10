@@ -48,7 +48,7 @@ router.post('/import/preview', authorize('SUPER_ADMIN', 'ADMIN'), upload.single(
     // sheet (Particulars/Remarks) is free text, not a clean name, so an exact-match
     // SQL query would almost never hit. Checking whether a known student's name
     // appears anywhere in that text catches those cases too.
-    const allEnrollments = await prisma.enrollment.findMany({ include: { lead: { select: { name: true, phone: true } } } });
+    const allEnrollments = await prisma.enrollment.findMany({ include: { lead: { select: { name: true, phone: true } }, course: { select: { name: true, shortName: true } } } });
     const byPhone = new Map(allEnrollments.filter(e => e.lead.phone).map(e => [e.lead.phone, e]));
 
     const preview = [];
@@ -75,6 +75,7 @@ router.post('/import/preview', authorize('SUPER_ADMIN', 'ADMIN'), upload.single(
         bankAccount: row.bankAccount ? normalizeBankAccount(row.bankAccount) : 'CASH',
         matched: !!enrollment,
         matchedStudentName: enrollment?.lead?.name || null,
+        matchedCourseName: enrollment?.course?.shortName || enrollment?.course?.name || null,
         enrollmentId: enrollment?.id || null,
         include: !!enrollment,
       });

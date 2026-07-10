@@ -1,10 +1,15 @@
 import express from 'express';
+import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { prisma } from '../utils/prisma.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { logActivity } from '../utils/activityLogger.js';
 import { newWorkbook, addTableSheet, sendWorkbook } from '../utils/excelExport.js';
 import { nextStudentCode, releaseStudentCode } from '../utils/studentCode.js';
+import { parseWorkbookRows, toAmount, toDate } from '../utils/excelImport.js';
+import { matchCourse } from '../utils/courseMatcher.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = express.Router();
 router.use(authenticate);
@@ -63,6 +68,124 @@ router.get('/export-excel', async (req, res) => {
     })));
 
     await sendWorkbook(res, wb, 'FutureOptima_Students.xlsx');
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/enrollments/import/preview — bulk-register students from a spreadsheet
+// (e.g. "everyone who paid ₹500 and registered from April 1st"). Matches each row's
+// Course text against real courses and flags students who already have an
+// enrollment (by phone) as duplicates, WITHOUT saving anything yet.
+router.post('/import/preview', authorize('SUPER_ADMIN', 'ADMIN'), upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const rawRows = await parseWorkbookRows(req.file.buffer);
+    if (!rawRows.length) {
+      return res.status(400).json({ error: 'No recognizable rows found. Make sure the sheet has a Date column, a Name (or Phone) column, and ideally a Course column.' });
+    }
+
+    const courses = await prisma.course.findMany({ where: { isActive: true }, select: { id: true, name: true, shortName: true, fees: true } });
+
+    const preview = [];
+    for (const row of rawRows) {
+      const date = toDate(row.date);
+      const name = row.name ? String(row.name).trim() : '';
+      if (!date || !name) continue;
+
+      const phoneDigits = row.phone ? String(row.phone).replace(/\D/g, '').slice(-10) : '';
+      const amount = toAmount(row.credit ?? row.amount) || 500;
+      const course = await matchCourse(row.course || row.category);
+
+      let duplicate = false;
+      if (phoneDigits.length === 10) {
+        const lead = await prisma.lead.findUnique({ where: { phone: phoneDigits }, include: { enrollment: true } });
+        duplicate = !!lead?.enrollment;
+      }
+
+      preview.push({
+        date: date.toISOString(), name, phone: phoneDigits, amount,
+        courseId: course?.id || null, courseName: course?.name || null,
+        duplicate,
+        include: !duplicate && !!course,
+      });
+    }
+
+    res.json({
+      rows: preview,
+      total: preview.length,
+      courseMatchedCount: preview.filter(r => r.courseId).length,
+      duplicateCount: preview.filter(r => r.duplicate).length,
+      skipped: rawRows.length - preview.length,
+      courses: courses.map(c => ({ id: c.id, name: c.name, fees: c.fees })),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/enrollments/import/commit
+router.post('/import/commit', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'No rows to import' });
+
+    let created = 0, skipped = 0, seq = 0;
+    for (const row of rows) {
+      if (!row.include || !row.courseId) { skipped++; continue; }
+      const date = new Date(row.date);
+      const amount = Number(row.amount) || 0;
+      if (Number.isNaN(date.getTime()) || !row.name) { skipped++; continue; }
+
+      const courseRecord = await prisma.course.findUnique({ where: { id: row.courseId } });
+      if (!courseRecord) { skipped++; continue; }
+
+      const phoneDigits = row.phone ? String(row.phone).replace(/\D/g, '').slice(-10) : '';
+      let existingLead = null;
+      if (phoneDigits.length === 10) {
+        existingLead = await prisma.lead.findUnique({ where: { phone: phoneDigits }, include: { enrollment: true } });
+        if (existingLead?.enrollment) { skipped++; continue; }
+      }
+
+      const netFee = courseRecord.fees;
+      seq += 1;
+      const receiptNo = `FO-ENR-${Date.now()}-${seq}`;
+
+      await prisma.$transaction(async (tx) => {
+        const leadRecord = existingLead
+          ? await tx.lead.update({ where: { id: existingLead.id }, data: { status: 'WON', convertedAt: date } })
+          : await tx.lead.create({
+              data: {
+                name: row.name, phone: phoneDigits || null, status: 'WON', source: 'OTHER',
+                interestedCourse: courseRecord.courseId, convertedAt: date,
+              },
+            });
+
+        const studentCode = await nextStudentCode(tx, date, courseRecord.courseId === 'INTERNSHIP');
+        const enr = await tx.enrollment.create({
+          data: {
+            studentCode, leadId: leadRecord.id, courseId: courseRecord.id,
+            courseFee: netFee, discountAmount: 0, netFee,
+            paidAmount: 0, balanceDue: netFee, receiptNo, paymentStatus: 'PENDING', enrolledAt: date,
+          },
+        });
+
+        if (amount > 0) {
+          const receiptNumber = `FO-${date.getFullYear()}-${Date.now().toString().slice(-6)}-${seq}`;
+          await tx.payment.create({
+            data: {
+              enrollmentId: enr.id, amount, method: 'CASH', receiptNumber,
+              remarks: 'Registration fee - imported', bankAccount: 'CASH',
+              collectedById: req.user.id, paidAt: date,
+            },
+          });
+          const newBalance = netFee - amount;
+          await tx.enrollment.update({
+            where: { id: enr.id },
+            data: { paidAmount: amount, balanceDue: newBalance, paymentStatus: newBalance <= 0 ? 'PAID' : 'PARTIAL' },
+          });
+        }
+      });
+      created++;
+    }
+
+    res.json({ message: 'Import complete', created, skipped });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

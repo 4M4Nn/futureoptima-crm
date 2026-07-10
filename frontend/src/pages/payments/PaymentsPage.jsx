@@ -471,11 +471,16 @@ function ImportPaymentsModal({ open, onClose }) {
               <span>{summary.total} row(s) found — {summary.matchedCount} matched to existing students{summary.skipped > 0 && `, ${summary.skipped} skipped (missing date/amount)`}</span>
               <button onClick={() => { setRows(null); setSummary(null); if (fileRef.current) fileRef.current.value = ''; }} className="text-primary-600 hover:underline flex-shrink-0">Choose different file</button>
             </div>
+            {summary.matchedCount === 0 && (
+              <div className="text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3">
+                None of these rows matched an existing student, so there's nothing importable yet. Register these students first (Students page → Import Excel, or add them individually), then re-upload this file.
+              </div>
+            )}
             <div className="border border-gray-200 rounded-xl max-h-96 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
-                    {['', 'Date', 'Name / Phone', 'Amount', 'Status'].map(h => <th key={h} className="text-left text-xs font-medium text-gray-500 px-3 py-2">{h}</th>)}
+                    {['', 'Date', 'Student', 'Amount', 'Category', 'Status'].map(h => <th key={h} className="text-left text-xs font-medium text-gray-500 px-3 py-2">{h}</th>)}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -485,11 +490,19 @@ function ImportPaymentsModal({ open, onClose }) {
                         <input type="checkbox" checked={r.include} disabled={!r.matched} onChange={e => setRows(rs => rs.map((row, idx) => idx === i ? { ...row, include: e.target.checked } : row))} />
                       </td>
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDate(r.date)}</td>
-                      <td className="px-3 py-2 text-gray-700 max-w-[220px] truncate" title={r.name}>{r.name || '—'}{r.phone && <div className="text-xs text-gray-400">{r.phone}</div>}</td>
+                      <td className="px-3 py-2 max-w-[220px]">
+                        {r.matched
+                          ? <div className="font-medium text-gray-900 truncate">{r.matchedStudentName}</div>
+                          : <div className="text-gray-700 truncate" title={r.name}>{r.name || '—'}</div>}
+                        {r.phone
+                          ? <div className="text-xs text-gray-400">{r.phone}</div>
+                          : r.matched && <div className="text-xs text-gray-400 truncate" title={r.name}>{r.name}</div>}
+                      </td>
                       <td className="px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">{fmt(r.amount)}</td>
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.matchedCourseName || '—'}</td>
                       <td className="px-3 py-2">
                         {r.matched
-                          ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700">Matched — {r.matchedStudentName}</span>
+                          ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700">Matched</span>
                           : <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600">No student found</span>}
                       </td>
                     </tr>

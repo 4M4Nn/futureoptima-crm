@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { GraduationCap, Search, RefreshCw, Download, Trash2, FileSpreadsheet, UserPlus, Loader2 } from 'lucide-react';
+import { GraduationCap, Search, RefreshCw, Download, Trash2, FileSpreadsheet, UserPlus, Loader2, Upload, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
@@ -262,6 +262,121 @@ async function downloadReceipt(paymentId, receiptNumber) {
   }
 }
 
+function ImportStudentsModal({ open, onClose }) {
+  const qc = useQueryClient();
+  const fileRef = useRef(null);
+  const [rows, setRows] = useState(null);
+  const [summary, setSummary] = useState(null);
+
+  const previewMutation = useMutation({
+    mutationFn: (file) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api.post('/enrollments/import/preview', fd).then(r => r.data);
+    },
+    onSuccess: (data) => { setRows(data.rows); setSummary(data); },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.error || 'Failed to read file'),
+  });
+
+  const commitMutation = useMutation({
+    mutationFn: () => api.post('/enrollments/import/commit', { rows }).then(r => r.data),
+    onSuccess: (data) => {
+      toast.success(`Registered ${data.created} student(s)${data.skipped ? `, skipped ${data.skipped}` : ''}!`);
+      qc.invalidateQueries(['enrollments']);
+      handleClose();
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.error || 'Import failed'),
+  });
+
+  const handleClose = () => {
+    if (previewMutation.isPending || commitMutation.isPending) return;
+    setRows(null);
+    setSummary(null);
+    if (fileRef.current) fileRef.current.value = '';
+    onClose();
+  };
+
+  const updateRow = (i, patch) => setRows(rs => rs.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const includedCount = rows?.filter(r => r.include).length || 0;
+  const courseOpts = (summary?.courses || []).map(c => ({ value: c.id, label: `${c.name} (${fmt(c.fees)})` }));
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Import Student Registrations from Excel" size="xl">
+      <div className="p-6 space-y-4">
+        {!rows ? (
+          <>
+            <p className="text-sm text-gray-500">
+              Upload your registrations spreadsheet (Date, Name, Phone, Course, Amount paid). Each row creates a new
+              student with that course's full fee and logs the amount paid as a registration payment. Students who
+              already have an enrollment (matched by phone) are flagged as duplicates and skipped.
+            </p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={e => e.target.files[0] && previewMutation.mutate(e.target.files[0])}
+              className="input"
+              disabled={previewMutation.isPending}
+            />
+            {previewMutation.isPending && <p className="text-sm text-primary-600">Reading and matching rows...</p>}
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-sm bg-blue-50 border border-blue-100 rounded-lg p-3">
+              <span>
+                {summary.total} row(s) found — {summary.courseMatchedCount} matched a course
+                {summary.duplicateCount > 0 && `, ${summary.duplicateCount} already enrolled (skipped)`}
+                {summary.skipped > 0 && `, ${summary.skipped} skipped (missing date/name)`}
+              </span>
+              <button onClick={() => { setRows(null); setSummary(null); if (fileRef.current) fileRef.current.value = ''; }} className="text-primary-600 hover:underline flex-shrink-0">Choose different file</button>
+            </div>
+            <div className="border border-gray-200 rounded-xl max-h-96 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    {['', 'Date', 'Name / Phone', 'Amount', 'Course', 'Status'].map(h => <th key={h} className="text-left text-xs font-medium text-gray-500 px-3 py-2">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {rows.map((r, i) => (
+                    <tr key={i} className={r.duplicate ? 'opacity-50' : !r.include ? 'opacity-70' : ''}>
+                      <td className="px-3 py-2">
+                        <input type="checkbox" checked={r.include} disabled={r.duplicate || !r.courseId} onChange={e => updateRow(i, { include: e.target.checked })} />
+                      </td>
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDate(r.date)}</td>
+                      <td className="px-3 py-2 text-gray-700 max-w-[180px] truncate" title={r.name}>{r.name || '—'}{r.phone && <div className="text-xs text-gray-400">{r.phone}</div>}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">{fmt(r.amount)}</td>
+                      <td className="px-3 py-2">
+                        <select value={r.courseId || ''} onChange={e => { const c = summary.courses.find(c => c.id === e.target.value); updateRow(i, { courseId: e.target.value || null, courseName: c?.name || null, include: !r.duplicate && !!e.target.value }); }} className="input text-xs py-1" disabled={r.duplicate}>
+                          <option value="">No course matched</option>
+                          {courseOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        {r.duplicate
+                          ? <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Already enrolled</span>
+                          : r.courseId
+                            ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700">Ready</span>
+                            : <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600">Pick a course</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button className="btn-secondary" onClick={handleClose}>Cancel</button>
+              <button className="btn-primary" onClick={() => commitMutation.mutate()} disabled={!includedCount || commitMutation.isPending}>
+                {commitMutation.isPending ? 'Registering...' : <><Sparkles className="w-4 h-4" />Register {includedCount} Student(s)</>}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export default function StudentsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -271,6 +386,7 @@ export default function StudentsPage() {
   const [batchId, setBatchId] = useState('');
   const [exporting, setExporting] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const exportExcel = async () => {
     try {
@@ -355,6 +471,14 @@ export default function StudentsPage() {
           <p className="text-gray-500 text-sm">{data?.pagination?.total || 0} enrolled students</p>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+            >
+              <Upload className="w-4 h-4" /> Import Excel
+            </button>
+          )}
           <button
             onClick={() => setShowQuickAdd(true)}
             className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 transition-colors"
@@ -478,6 +602,7 @@ export default function StudentsPage() {
         confirmLabel="Delete Everything"
       />
       <QuickAddStudentModal open={showQuickAdd} onClose={() => setShowQuickAdd(false)} />
+      <ImportStudentsModal open={showImport} onClose={() => setShowImport(false)} />
       <AssignBatchModal open={!!assigningBatchFor} onClose={() => setAssigningBatchFor(null)} enrollment={assigningBatchFor} />
     </div>
   );
