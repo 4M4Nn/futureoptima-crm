@@ -485,11 +485,11 @@ function ImportPaymentsModal({ open, onClose }) {
                         <input type="checkbox" checked={r.include} disabled={!r.matched} onChange={e => setRows(rs => rs.map((row, idx) => idx === i ? { ...row, include: e.target.checked } : row))} />
                       </td>
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDate(r.date)}</td>
-                      <td className="px-3 py-2 text-gray-700">{r.name || '—'}{r.phone && <div className="text-xs text-gray-400">{r.phone}</div>}</td>
+                      <td className="px-3 py-2 text-gray-700 max-w-[220px] truncate" title={r.name}>{r.name || '—'}{r.phone && <div className="text-xs text-gray-400">{r.phone}</div>}</td>
                       <td className="px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">{fmt(r.amount)}</td>
                       <td className="px-3 py-2">
                         {r.matched
-                          ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700">Matched</span>
+                          ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700">Matched — {r.matchedStudentName}</span>
                           : <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600">No student found</span>}
                       </td>
                     </tr>

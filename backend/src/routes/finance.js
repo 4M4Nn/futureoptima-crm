@@ -165,14 +165,14 @@ router.post('/expenses/import/preview', authorize('SUPER_ADMIN', 'ADMIN'), uploa
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const rawRows = await parseWorkbookRows(req.file.buffer);
     if (!rawRows.length) {
-      return res.status(400).json({ error: 'No recognizable rows found. Make sure the sheet has a Date column, an Amount column, and a Description/Vendor/Particulars column.' });
+      return res.status(400).json({ error: 'No recognizable rows found. Make sure the sheet has a Date column, an Amount (or Debit) column, and a Description/Vendor/Particulars column.' });
     }
 
     const preview = [];
     const pendingAiIndexes = [];
     for (const row of rawRows) {
       const description = row.name ? String(row.name) : '';
-      const amount = toAmount(row.amount);
+      const amount = toAmount(row.debit ?? row.amount);
       const date = toDate(row.date);
       if (!amount || !date) continue; // unusable row, silently skip
 

@@ -41,26 +41,32 @@ router.post('/import/preview', authorize('SUPER_ADMIN', 'ADMIN'), upload.single(
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const rawRows = await parseWorkbookRows(req.file.buffer);
     if (!rawRows.length) {
-      return res.status(400).json({ error: 'No recognizable rows found. Make sure the sheet has a Date column, an Amount column, and a Name or Phone column.' });
+      return res.status(400).json({ error: 'No recognizable rows found. Make sure the sheet has a Date column, an Amount (or Credit) column, and a Name/Particulars or Phone column.' });
     }
+
+    // Fetch once and match in memory — the "name" field from a bank-statement-style
+    // sheet (Particulars/Remarks) is free text, not a clean name, so an exact-match
+    // SQL query would almost never hit. Checking whether a known student's name
+    // appears anywhere in that text catches those cases too.
+    const allEnrollments = await prisma.enrollment.findMany({ include: { lead: { select: { name: true, phone: true } } } });
+    const byPhone = new Map(allEnrollments.filter(e => e.lead.phone).map(e => [e.lead.phone, e]));
 
     const preview = [];
     for (const row of rawRows) {
-      const amount = toAmount(row.amount);
+      const amount = toAmount(row.credit ?? row.amount);
       const date = toDate(row.date);
       if (!amount || !date) continue;
 
       const name = row.name ? String(row.name).trim() : '';
       const phoneDigits = row.phone ? String(row.phone).replace(/\D/g, '').slice(-10) : '';
+      const lowerName = name.toLowerCase();
 
-      let enrollment = null;
-      if (phoneDigits.length === 10) {
-        const lead = await prisma.lead.findUnique({ where: { phone: phoneDigits }, include: { enrollment: true } });
-        enrollment = lead?.enrollment || null;
+      let enrollment = phoneDigits.length === 10 ? (byPhone.get(phoneDigits) || null) : null;
+      if (!enrollment && lowerName) {
+        enrollment = allEnrollments.find(e => lowerName === e.lead.name.toLowerCase()) || null;
       }
-      if (!enrollment && name) {
-        const lead = await prisma.lead.findFirst({ where: { name: { equals: name, mode: 'insensitive' } }, include: { enrollment: true } });
-        enrollment = lead?.enrollment || null;
+      if (!enrollment && lowerName) {
+        enrollment = allEnrollments.find(e => e.lead.name.length >= 4 && lowerName.includes(e.lead.name.toLowerCase())) || null;
       }
 
       preview.push({
@@ -68,6 +74,7 @@ router.post('/import/preview', authorize('SUPER_ADMIN', 'ADMIN'), upload.single(
         method: row.method ? normalizeMethod(row.method) : 'CASH',
         bankAccount: row.bankAccount ? normalizeBankAccount(row.bankAccount) : 'CASH',
         matched: !!enrollment,
+        matchedStudentName: enrollment?.lead?.name || null,
         enrollmentId: enrollment?.id || null,
         include: !!enrollment,
       });
