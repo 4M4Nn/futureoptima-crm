@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Plus, Receipt, Filter, Trash2 } from 'lucide-react';
+import { Plus, Receipt, Filter, Trash2, Upload, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
@@ -29,9 +29,136 @@ const now = new Date();
 const DEFAULT_FROM = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
 const DEFAULT_TO = now.toISOString().slice(0, 10);
 
+const SOURCE_LABELS = {
+  'employee-match': { label: 'Salary match', color: 'bg-blue-50 text-blue-700' },
+  rule: { label: 'Rule', color: 'bg-green-50 text-green-700' },
+  ai: { label: 'AI', color: 'bg-purple-50 text-purple-700' },
+  default: { label: 'Unsure', color: 'bg-amber-50 text-amber-700' },
+};
+
+function ImportExpensesModal({ open, onClose }) {
+  const qc = useQueryClient();
+  const fileRef = useRef(null);
+  const [rows, setRows] = useState(null);
+  const [summary, setSummary] = useState(null);
+
+  const previewMutation = useMutation({
+    mutationFn: (file) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api.post('/finance/expenses/import/preview', fd).then(r => r.data);
+    },
+    onSuccess: (data) => { setRows(data.rows); setSummary(data); },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.error || 'Failed to read file'),
+  });
+
+  const commitMutation = useMutation({
+    mutationFn: () => api.post('/finance/expenses/import/commit', { rows }).then(r => r.data),
+    onSuccess: (data) => {
+      toast.success(`Imported ${data.expensesCreated} expense(s), updated ${data.salaryRecordsUpserted} salary record(s)!`);
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['finance-dashboard'] });
+      qc.invalidateQueries({ queryKey: ['salary-records'] });
+      handleClose();
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.error || 'Import failed'),
+  });
+
+  const handleClose = () => {
+    if (previewMutation.isPending || commitMutation.isPending) return;
+    setRows(null);
+    setSummary(null);
+    if (fileRef.current) fileRef.current.value = '';
+    onClose();
+  };
+
+  const updateRow = (i, patch) => setRows(rs => rs.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const includedCount = rows?.filter(r => r.include).length || 0;
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Import Expenses from Excel" size="xl">
+      <div className="p-6 space-y-4">
+        {!rows ? (
+          <>
+            <p className="text-sm text-gray-500">
+              Upload last month's expense spreadsheet. Rows matching an active staff member's name are treated as salary
+              payments (and will update the Salary page too); everything else is auto-categorized by keyword rules, then AI
+              for anything left ambiguous.
+            </p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={e => e.target.files[0] && previewMutation.mutate(e.target.files[0])}
+              className="input"
+              disabled={previewMutation.isPending}
+            />
+            {previewMutation.isPending && <p className="text-sm text-primary-600">Reading and categorizing rows...</p>}
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-sm bg-blue-50 border border-blue-100 rounded-lg p-3">
+              <span>{summary.total} row(s) found{summary.skipped > 0 && `, ${summary.skipped} skipped (missing date/amount)`}{summary.salaryMatches > 0 && ` — ${summary.salaryMatches} matched to staff salaries`}</span>
+              <button onClick={() => { setRows(null); setSummary(null); if (fileRef.current) fileRef.current.value = ''; }} className="text-primary-600 hover:underline flex-shrink-0">Choose different file</button>
+            </div>
+            <div className="border border-gray-200 rounded-xl max-h-96 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    {['', 'Date', 'Description', 'Amount', 'Category', ''].map(h => <th key={h} className="text-left text-xs font-medium text-gray-500 px-3 py-2">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {rows.map((r, i) => (
+                    <tr key={i} className={!r.include ? 'opacity-40' : ''}>
+                      <td className="px-3 py-2"><input type="checkbox" checked={r.include} onChange={e => updateRow(i, { include: e.target.checked })} /></td>
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDate(r.date)}</td>
+                      <td className="px-3 py-2 text-gray-700 max-w-[180px] truncate" title={r.description}>{r.description || '—'}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">{fmt(r.amount)}</td>
+                      <td className="px-3 py-2">
+                        {r.isSalary ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Salary — {r.employeeName}</span>
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            <select value={r.category || ''} onChange={e => updateRow(i, { category: e.target.value, subCategory: '' })} className="input text-xs py-1">
+                              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            {SUBCATEGORIES[r.category] && (
+                              <select value={r.subCategory || ''} onChange={e => updateRow(i, { subCategory: e.target.value })} className="input text-xs py-1">
+                                <option value="">No sub-category</option>
+                                {SUBCATEGORIES[r.category].map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                              </select>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${SOURCE_LABELS[r.source]?.color || 'bg-gray-50 text-gray-600'}`}>
+                          {SOURCE_LABELS[r.source]?.label || r.source}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button className="btn-secondary" onClick={handleClose}>Cancel</button>
+              <button className="btn-primary" onClick={() => commitMutation.mutate()} disabled={!includedCount || commitMutation.isPending}>
+                {commitMutation.isPending ? 'Importing...' : <><Sparkles className="w-4 h-4" />Import {includedCount} Row(s)</>}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export default function ExpensesPage() {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [deleteExpense, setDeleteExpense] = useState(null);
   const [from, setFrom] = useState(DEFAULT_FROM);
   const [to, setTo] = useState(DEFAULT_TO);
@@ -89,9 +216,14 @@ export default function ExpensesPage() {
           <h1 className="text-2xl font-bold text-gray-900">Expense Management</h1>
           <p className="text-sm text-gray-500 mt-1">Track and manage institute expenses</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Add Expense
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowImport(true)} className="btn-secondary flex items-center gap-2">
+            <Upload className="w-4 h-4" /> Import Excel
+          </button>
+          <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Add Expense
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -256,6 +388,8 @@ export default function ExpensesPage() {
           </div>
         </form>
       </Modal>
+
+      <ImportExpensesModal open={showImport} onClose={() => setShowImport(false)} />
     </div>
   );
 }

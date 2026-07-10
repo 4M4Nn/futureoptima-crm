@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CreditCard, Plus, CheckCircle, RefreshCw, Download, X, Users } from 'lucide-react';
+import { CreditCard, Plus, CheckCircle, RefreshCw, Download, X, Users, Upload, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../../utils/api';
 import { fmt, fmtDate, fmtDatetime, PAYMENT_METHODS } from '../../utils/constants';
@@ -408,10 +408,113 @@ function GroupPaymentsSection() {
   );
 }
 
+function ImportPaymentsModal({ open, onClose }) {
+  const qc = useQueryClient();
+  const fileRef = useRef(null);
+  const [rows, setRows] = useState(null);
+  const [summary, setSummary] = useState(null);
+
+  const previewMutation = useMutation({
+    mutationFn: (file) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api.post('/payments/import/preview', fd).then(r => r.data);
+    },
+    onSuccess: (data) => { setRows(data.rows); setSummary(data); },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.error || 'Failed to read file'),
+  });
+
+  const commitMutation = useMutation({
+    mutationFn: () => api.post('/payments/import/commit', { rows }).then(r => r.data),
+    onSuccess: (data) => {
+      toast.success(`Imported ${data.created} payment(s)${data.skipped ? `, skipped ${data.skipped}` : ''}!`);
+      qc.invalidateQueries(['payments']);
+      qc.invalidateQueries(['payment-stats']);
+      qc.invalidateQueries(['enrollments']);
+      handleClose();
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.error || 'Import failed'),
+  });
+
+  const handleClose = () => {
+    if (previewMutation.isPending || commitMutation.isPending) return;
+    setRows(null);
+    setSummary(null);
+    if (fileRef.current) fileRef.current.value = '';
+    onClose();
+  };
+
+  const includedCount = rows?.filter(r => r.include).length || 0;
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Import Payments from Excel" size="xl">
+      <div className="p-6 space-y-4">
+        {!rows ? (
+          <>
+            <p className="text-sm text-gray-500">
+              Upload a spreadsheet of historical student payments (Name/Phone, Amount, Date). Only rows that match an
+              existing student's enrollment can be imported — add the student first if they're not in the system yet.
+            </p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={e => e.target.files[0] && previewMutation.mutate(e.target.files[0])}
+              className="input"
+              disabled={previewMutation.isPending}
+            />
+            {previewMutation.isPending && <p className="text-sm text-primary-600">Reading and matching rows...</p>}
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-sm bg-blue-50 border border-blue-100 rounded-lg p-3">
+              <span>{summary.total} row(s) found — {summary.matchedCount} matched to existing students{summary.skipped > 0 && `, ${summary.skipped} skipped (missing date/amount)`}</span>
+              <button onClick={() => { setRows(null); setSummary(null); if (fileRef.current) fileRef.current.value = ''; }} className="text-primary-600 hover:underline flex-shrink-0">Choose different file</button>
+            </div>
+            <div className="border border-gray-200 rounded-xl max-h-96 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    {['', 'Date', 'Name / Phone', 'Amount', 'Status'].map(h => <th key={h} className="text-left text-xs font-medium text-gray-500 px-3 py-2">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {rows.map((r, i) => (
+                    <tr key={i} className={!r.matched ? 'opacity-50' : !r.include ? 'opacity-40' : ''}>
+                      <td className="px-3 py-2">
+                        <input type="checkbox" checked={r.include} disabled={!r.matched} onChange={e => setRows(rs => rs.map((row, idx) => idx === i ? { ...row, include: e.target.checked } : row))} />
+                      </td>
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDate(r.date)}</td>
+                      <td className="px-3 py-2 text-gray-700">{r.name || '—'}{r.phone && <div className="text-xs text-gray-400">{r.phone}</div>}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">{fmt(r.amount)}</td>
+                      <td className="px-3 py-2">
+                        {r.matched
+                          ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700">Matched</span>
+                          : <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600">No student found</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button className="btn-secondary" onClick={handleClose}>Cancel</button>
+              <button className="btn-primary" onClick={() => commitMutation.mutate()} disabled={!includedCount || commitMutation.isPending}>
+                {commitMutation.isPending ? 'Importing...' : <><Sparkles className="w-4 h-4" />Import {includedCount} Row(s)</>}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export default function PaymentsPage() {
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [showGroupAdd, setShowGroupAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [cancelPayment, setCancelPayment] = useState(null);
   const { user } = useAuthStore();
   const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
@@ -434,6 +537,7 @@ export default function PaymentsPage() {
           <p className="text-gray-500 text-sm">PDF receipts auto-generated on every payment</p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
+          <button onClick={() => setShowImport(true)} className="btn-secondary"><Upload className="w-4 h-4" />Import Excel</button>
           <button onClick={() => setShowGroupAdd(true)} className="btn-secondary"><Users className="w-4 h-4" />Group Payment</button>
           <button onClick={() => setShowAdd(true)} className="btn-primary"><Plus className="w-4 h-4" />Record Payment</button>
         </div>
@@ -516,6 +620,7 @@ export default function PaymentsPage() {
 
       <AddPaymentModal open={showAdd} onClose={() => setShowAdd(false)} />
       <GroupPaymentModal open={showGroupAdd} onClose={() => setShowGroupAdd(false)} />
+      <ImportPaymentsModal open={showImport} onClose={() => setShowImport(false)} />
       <ConfirmDialog
         open={!!cancelPayment}
         onClose={() => setCancelPayment(null)}

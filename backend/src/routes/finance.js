@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { prisma } from '../utils/prisma.js';
 import { authenticate, authorize } from '../middleware/auth.js';
@@ -7,10 +8,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { newWorkbook, addTableSheet, addTotalsRow, sendWorkbook, INR_FORMAT } from '../utils/excelExport.js';
+import { parseWorkbookRows, toAmount, toDate } from '../utils/excelImport.js';
+import { ruleBasedCategorize, matchEmployee, aiCategorizeBatch } from '../services/expenseCategorizer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const slipsDir = path.join(__dirname, '../../uploads/salary-slips');
 if (!fs.existsSync(slipsDir)) fs.mkdirSync(slipsDir, { recursive: true });
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = express.Router();
 router.use(authenticate);
@@ -149,6 +154,118 @@ router.get('/collections', async (req, res) => {
       totalAmount: total._sum.amount || 0,
       totalCount: total._count.id || 0,
     });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/finance/expenses/import/preview — parse an uploaded Excel sheet and
+// categorize each row (employee-name match -> Salary, then keyword rules, then AI
+// for anything left ambiguous) WITHOUT saving anything yet.
+router.post('/expenses/import/preview', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const rawRows = await parseWorkbookRows(req.file.buffer);
+    if (!rawRows.length) {
+      return res.status(400).json({ error: 'No recognizable rows found. Make sure the sheet has a Date column, an Amount column, and a Description/Vendor/Particulars column.' });
+    }
+
+    const preview = [];
+    const pendingAiIndexes = [];
+    for (const row of rawRows) {
+      const description = row.name ? String(row.name) : '';
+      const amount = toAmount(row.amount);
+      const date = toDate(row.date);
+      if (!amount || !date) continue; // unusable row, silently skip
+
+      const employee = await matchEmployee(description);
+      if (employee) {
+        preview.push({
+          description, amount, date: date.toISOString(),
+          isSalary: true, employeeId: employee.id, employeeName: employee.name,
+          category: 'Salary', subCategory: null, source: 'employee-match', include: true,
+        });
+        continue;
+      }
+      const rule = ruleBasedCategorize(description) || (row.category ? ruleBasedCategorize(String(row.category)) : null);
+      if (rule) {
+        preview.push({ description, amount, date: date.toISOString(), isSalary: false, category: rule.category, subCategory: rule.subCategory, source: rule.source, include: true });
+      } else {
+        preview.push({ description, amount, date: date.toISOString(), isSalary: false, category: null, subCategory: null, source: 'pending', include: true });
+        pendingAiIndexes.push(preview.length - 1);
+      }
+    }
+
+    if (pendingAiIndexes.length) {
+      const results = await aiCategorizeBatch(pendingAiIndexes.map(i => preview[i].description));
+      pendingAiIndexes.forEach((idx, j) => {
+        const r = results[j];
+        preview[idx].category = r?.category || 'Miscellaneous';
+        preview[idx].subCategory = r?.subCategory || null;
+        preview[idx].source = r ? 'ai' : 'default';
+      });
+    }
+
+    res.json({
+      rows: preview,
+      total: preview.length,
+      skipped: rawRows.length - preview.length,
+      salaryMatches: preview.filter(r => r.isSalary).length,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/finance/expenses/import/commit — actually create the (possibly
+// user-edited) rows from the preview step. Salary-matched rows create/update the
+// employee's SalaryRecord for that month AND log an Expense row for the ledger.
+router.post('/expenses/import/commit', async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'No rows to import' });
+
+    let expensesCreated = 0;
+    let salaryRecordsUpserted = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        if (!row.include) continue;
+        const amount = Number(row.amount);
+        const date = new Date(row.date);
+        if (!amount || Number.isNaN(date.getTime())) continue;
+
+        if (row.isSalary && row.employeeId) {
+          const employee = await tx.employee.findUnique({ where: { id: row.employeeId } });
+          if (employee) {
+            await tx.salaryRecord.upsert({
+              where: { employeeId_month_year: { employeeId: employee.id, month: date.getMonth() + 1, year: date.getFullYear() } },
+              update: { basicSalary: amount, bonus: 0, deductions: 0, netSalary: amount, paymentStatus: 'PAID', paymentDate: date, notes: 'Imported from Excel' },
+              create: {
+                employeeId: employee.id, userId: employee.userId, employeeName: employee.name,
+                designation: employee.designation, department: employee.department, isExternalEmployee: employee.isExternalEmployee,
+                month: date.getMonth() + 1, year: date.getFullYear(),
+                basicSalary: amount, bonus: 0, deductions: 0, netSalary: amount,
+                paymentStatus: 'PAID', paymentDate: date, bankAccount: employee.bankAccount, notes: 'Imported from Excel',
+              },
+            });
+            salaryRecordsUpserted++;
+          }
+        }
+
+        await tx.expense.create({
+          data: {
+            category: row.category || 'Miscellaneous',
+            subCategory: row.subCategory || null,
+            amount, date,
+            paymentMethod: row.paymentMethod || 'Cash',
+            vendor: row.description || null,
+            notes: 'Imported from Excel',
+            bankAccount: row.bankAccount || 'CASH',
+            addedById: req.user.id,
+          },
+        });
+        expensesCreated++;
+      }
+    });
+
+    res.json({ message: 'Import complete', expensesCreated, salaryRecordsUpserted });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

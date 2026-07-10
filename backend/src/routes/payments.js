@@ -1,18 +1,126 @@
 import express from 'express';
+import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { prisma } from '../utils/prisma.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { generateReceiptPDF } from '../services/receiptService.js';
 import { logActivity } from '../utils/activityLogger.js';
+import { parseWorkbookRows, toAmount, toDate } from '../utils/excelImport.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const receiptsDir = path.join(__dirname, '../../uploads/receipts');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = express.Router();
 router.use(authenticate);
+
+function normalizeMethod(v) {
+  const t = String(v || '').toUpperCase().replace(/[\s-]+/g, '_');
+  if (['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'EMI'].includes(t)) return t;
+  if (t.includes('UPI')) return 'UPI';
+  if (t.includes('BANK')) return 'BANK_TRANSFER';
+  if (t.includes('CHEQUE') || t.includes('CHECK')) return 'CHEQUE';
+  if (t.includes('CARD')) return 'CARD';
+  return 'CASH';
+}
+function normalizeBankAccount(v) {
+  const t = String(v || '').toUpperCase();
+  if (['HDFC', 'ICICI', 'IDFC', 'CASH'].includes(t)) return t;
+  return 'CASH';
+}
+
+// POST /api/payments/import/preview — parse an uploaded Excel sheet of historical
+// student payments and try to match each row to an existing enrollment by phone
+// (exact) then name (case-insensitive). Nothing is saved yet — only rows matched
+// to a real enrollment can actually be committed, since a Payment always needs one.
+router.post('/import/preview', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const rawRows = await parseWorkbookRows(req.file.buffer);
+    if (!rawRows.length) {
+      return res.status(400).json({ error: 'No recognizable rows found. Make sure the sheet has a Date column, an Amount column, and a Name or Phone column.' });
+    }
+
+    const preview = [];
+    for (const row of rawRows) {
+      const amount = toAmount(row.amount);
+      const date = toDate(row.date);
+      if (!amount || !date) continue;
+
+      const name = row.name ? String(row.name).trim() : '';
+      const phoneDigits = row.phone ? String(row.phone).replace(/\D/g, '').slice(-10) : '';
+
+      let enrollment = null;
+      if (phoneDigits.length === 10) {
+        const lead = await prisma.lead.findUnique({ where: { phone: phoneDigits }, include: { enrollment: true } });
+        enrollment = lead?.enrollment || null;
+      }
+      if (!enrollment && name) {
+        const lead = await prisma.lead.findFirst({ where: { name: { equals: name, mode: 'insensitive' } }, include: { enrollment: true } });
+        enrollment = lead?.enrollment || null;
+      }
+
+      preview.push({
+        name, phone: phoneDigits, amount, date: date.toISOString(),
+        method: row.method ? normalizeMethod(row.method) : 'CASH',
+        bankAccount: row.bankAccount ? normalizeBankAccount(row.bankAccount) : 'CASH',
+        matched: !!enrollment,
+        enrollmentId: enrollment?.id || null,
+        include: !!enrollment,
+      });
+    }
+
+    res.json({
+      rows: preview,
+      total: preview.length,
+      matchedCount: preview.filter(r => r.matched).length,
+      skipped: rawRows.length - preview.length,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/payments/import/commit
+router.post('/import/commit', async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'No rows to import' });
+
+    let created = 0, skipped = 0, seq = 0;
+    for (const row of rows) {
+      if (!row.include || !row.enrollmentId) { skipped++; continue; }
+      const amount = Number(row.amount);
+      const date = new Date(row.date);
+      if (!amount || Number.isNaN(date.getTime())) { skipped++; continue; }
+
+      const enrollment = await prisma.enrollment.findUnique({ where: { id: row.enrollmentId } });
+      if (!enrollment) { skipped++; continue; }
+
+      seq += 1;
+      const receiptNumber = `FO-IMP-${Date.now().toString().slice(-6)}-${seq}`;
+      await prisma.$transaction(async (tx) => {
+        await tx.payment.create({
+          data: {
+            enrollmentId: enrollment.id, amount, method: row.method || 'CASH', receiptNumber,
+            remarks: 'Imported from Excel', bankAccount: row.bankAccount || 'CASH',
+            collectedById: req.user.id, paidAt: date,
+          },
+        });
+        const newPaid = enrollment.paidAmount + amount;
+        const newBalance = enrollment.netFee - newPaid;
+        await tx.enrollment.update({
+          where: { id: enrollment.id },
+          data: { paidAmount: newPaid, balanceDue: newBalance, paymentStatus: newBalance <= 0 ? 'PAID' : 'PARTIAL' },
+        });
+      });
+      created++;
+    }
+
+    res.json({ message: 'Import complete', created, skipped });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 router.post('/', [
   body('enrollmentId').notEmpty(),
