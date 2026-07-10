@@ -47,6 +47,7 @@ async function main() {
     { courseId: 'DATA_ANALYTICS', name: 'Data Analytics with AI', shortName: 'Data Analytics', duration: '3 months', totalHours: 180, fees: 46000, highlights: ['Excel & SQL', 'Power BI & Tableau', 'Python Analytics', 'Dashboards'] },
     { courseId: 'BUSINESS_ANALYTICS', name: 'Business Analytics', shortName: 'Biz Analytics', duration: '3 months', totalHours: 180, fees: 20000, highlights: ['Business Intelligence', 'Forecasting', 'Data Storytelling', 'MBA-level Case Studies'] },
     { courseId: 'INTERNSHIP', name: 'Internship Programme', shortName: 'Internship', duration: '15 days - 1 month', totalHours: 160, fees: 5000, emiAvailable: false, maxInstallments: 1, highlights: ['Real project experience', 'Industry mentorship', 'Certificate on completion', 'Live project work'] },
+    { courseId: 'VACATION_CLASS', name: 'Vacation Class', shortName: 'Vacation Class', duration: '2 weeks', totalHours: 40, fees: 5000, emiAvailable: false, maxInstallments: 1, highlights: ['Beginner-friendly', 'Hands-on projects', 'Certificate on completion'] },
   ];
 
   for (const c of courses) {

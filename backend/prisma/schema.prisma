@@ -43,6 +43,7 @@ enum CourseId {
   DATA_ANALYTICS
   BUSINESS_ANALYTICS
   INTERNSHIP
+  VACATION_CLASS
 }
 
 enum CourseMode {

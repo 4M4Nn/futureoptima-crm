@@ -537,7 +537,7 @@ export default function PaymentsPage() {
           <p className="text-gray-500 text-sm">PDF receipts auto-generated on every payment</p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <button onClick={() => setShowImport(true)} className="btn-secondary"><Upload className="w-4 h-4" />Import Excel</button>
+          {isAdmin && <button onClick={() => setShowImport(true)} className="btn-secondary"><Upload className="w-4 h-4" />Import Excel</button>}
           <button onClick={() => setShowGroupAdd(true)} className="btn-secondary"><Users className="w-4 h-4" />Group Payment</button>
           <button onClick={() => setShowAdd(true)} className="btn-primary"><Plus className="w-4 h-4" />Record Payment</button>
         </div>

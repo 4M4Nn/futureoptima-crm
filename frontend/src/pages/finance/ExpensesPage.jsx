@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
 import { Modal, LoadingState, EmptyState, StatCard, ConfirmDialog } from '../../components/ui/index';
+import { useAuthStore } from '../../store/authStore';
 
 const CATEGORIES = ['Salary', 'Rent', 'Marketing', 'Sales', 'Office Expense', 'Miscellaneous'];
 const SUBCATEGORIES = {
@@ -157,6 +158,8 @@ function ImportExpensesModal({ open, onClose }) {
 
 export default function ExpensesPage() {
   const qc = useQueryClient();
+  const { user } = useAuthStore();
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
   const [showModal, setShowModal] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [deleteExpense, setDeleteExpense] = useState(null);
@@ -217,9 +220,11 @@ export default function ExpensesPage() {
           <p className="text-sm text-gray-500 mt-1">Track and manage institute expenses</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowImport(true)} className="btn-secondary flex items-center gap-2">
-            <Upload className="w-4 h-4" /> Import Excel
-          </button>
+          {isAdmin && (
+            <button onClick={() => setShowImport(true)} className="btn-secondary flex items-center gap-2">
+              <Upload className="w-4 h-4" /> Import Excel
+            </button>
+          )}
           <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
             <Plus className="w-4 h-4" /> Add Expense
           </button>

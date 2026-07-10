@@ -65,6 +65,7 @@ mern|mean|mearn stack|node|react|mongodb -> MERN_STACK
 data analytics|analytics|excel|power bi -> DATA_ANALYTICS
 business|mba|business analytics -> BUSINESS_ANALYTICS
 internship|intern -> INTERNSHIP
+vacation|vacation class|summer camp|winter camp -> VACATION_CLASS
 
 Lead source:
 facebook|fb -> FACEBOOK_ADS

@@ -160,7 +160,7 @@ router.get('/collections', async (req, res) => {
 // POST /api/finance/expenses/import/preview — parse an uploaded Excel sheet and
 // categorize each row (employee-name match -> Salary, then keyword rules, then AI
 // for anything left ambiguous) WITHOUT saving anything yet.
-router.post('/expenses/import/preview', upload.single('file'), async (req, res) => {
+router.post('/expenses/import/preview', authorize('SUPER_ADMIN', 'ADMIN'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const rawRows = await parseWorkbookRows(req.file.buffer);
@@ -216,7 +216,7 @@ router.post('/expenses/import/preview', upload.single('file'), async (req, res) 
 // POST /api/finance/expenses/import/commit — actually create the (possibly
 // user-edited) rows from the preview step. Salary-matched rows create/update the
 // employee's SalaryRecord for that month AND log an Expense row for the ledger.
-router.post('/expenses/import/commit', async (req, res) => {
+router.post('/expenses/import/commit', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
     const { rows } = req.body;
     if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'No rows to import' });

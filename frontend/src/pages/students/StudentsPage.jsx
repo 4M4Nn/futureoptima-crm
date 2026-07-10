@@ -46,6 +46,7 @@ function QuickAddStudentModal({ open, onClose }) {
 
   const selectedCourse = courses.find(c => c.id === form.courseId);
   const isInternship = selectedCourse?.courseId === 'INTERNSHIP';
+  const isSinglePaymentCourse = (selectedCourse?.maxInstallments || 1) <= 1;
 
   const handleCourseChange = (id) => {
     const selected = courses.find(c => c.id === id);
@@ -54,7 +55,7 @@ function QuickAddStudentModal({ open, onClose }) {
       courseId: id,
       batchId: '',
       courseFee: selected ? String(selected.fees) : '',
-      installments: selected?.courseId === 'INTERNSHIP' ? '1' : p.installments,
+      installments: (selected?.maxInstallments || 1) <= 1 ? '1' : p.installments,
     }));
   };
 
@@ -170,12 +171,12 @@ function QuickAddStudentModal({ open, onClose }) {
               </div>
               <div>
                 <label className="label">Number of Installments</label>
-                <select className="input" value={form.installments} onChange={e => set('installments', e.target.value)} disabled={isInternship}>
+                <select className="input" value={form.installments} onChange={e => set('installments', e.target.value)} disabled={isSinglePaymentCourse}>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
                     <option key={n} value={n}>{n === 1 ? 'Full Payment (1 installment)' : `${n} Installments`}</option>
                   ))}
                 </select>
-                {isInternship && <p className="text-xs text-gray-400 mt-1">Internship fee is collected as a single payment</p>}
+                {isSinglePaymentCourse && <p className="text-xs text-gray-400 mt-1">This course's fee is collected as a single payment</p>}
               </div>
             </div>
             {isInternship && (

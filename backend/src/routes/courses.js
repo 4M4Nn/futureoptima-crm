@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
 
 // POST /api/courses - Admin only
 router.post('/', authorize('SUPER_ADMIN', 'ADMIN'), [
-  body('courseId').notEmpty().isIn(['AI_ENGINEERING','DATA_SCIENCE_AI','AI_CYBERSECURITY','PYTHON_FULLSTACK','MERN_STACK','DATA_ANALYTICS','BUSINESS_ANALYTICS','INTERNSHIP']),
+  body('courseId').notEmpty().isIn(['AI_ENGINEERING','DATA_SCIENCE_AI','AI_CYBERSECURITY','PYTHON_FULLSTACK','MERN_STACK','DATA_ANALYTICS','BUSINESS_ANALYTICS','INTERNSHIP','VACATION_CLASS']),
   body('name').notEmpty(),
   body('shortName').notEmpty(),
   body('duration').notEmpty(),

@@ -36,7 +36,7 @@ function normalizeBankAccount(v) {
 // student payments and try to match each row to an existing enrollment by phone
 // (exact) then name (case-insensitive). Nothing is saved yet — only rows matched
 // to a real enrollment can actually be committed, since a Payment always needs one.
-router.post('/import/preview', upload.single('file'), async (req, res) => {
+router.post('/import/preview', authorize('SUPER_ADMIN', 'ADMIN'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const rawRows = await parseWorkbookRows(req.file.buffer);
@@ -83,7 +83,7 @@ router.post('/import/preview', upload.single('file'), async (req, res) => {
 });
 
 // POST /api/payments/import/commit
-router.post('/import/commit', async (req, res) => {
+router.post('/import/commit', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
     const { rows } = req.body;
     if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'No rows to import' });
