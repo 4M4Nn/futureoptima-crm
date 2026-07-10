@@ -5,7 +5,7 @@ import { prisma } from '../utils/prisma.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { logActivity } from '../utils/activityLogger.js';
 import { newWorkbook, addTableSheet, sendWorkbook } from '../utils/excelExport.js';
-import { nextStudentCode, releaseStudentCode } from '../utils/studentCode.js';
+import { nextStudentCode, releaseStudentCode, getFYCode } from '../utils/studentCode.js';
 import { parseWorkbookRows, toAmount, toDate } from '../utils/excelImport.js';
 import { matchCourse } from '../utils/courseMatcher.js';
 
@@ -431,6 +431,45 @@ router.patch('/:id', async (req, res) => {
   try {
     const enrollment = await prisma.enrollment.update({ where: { id: req.params.id }, data: req.body });
     res.json(enrollment);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/enrollments/:id/enrolled-date — correct a mistaken enrollment date
+// (common after bulk Excel imports). If the corrected date falls in a different
+// financial year than the one the student's number was issued under, the student
+// code is re-issued for the correct FY bucket instead of silently going stale —
+// otherwise "fixing" the date would leave a student numbered under the wrong year.
+router.patch('/:id/enrolled-date', authorize('SUPER_ADMIN', 'ADMIN'), [
+  body('enrolledAt').isISO8601(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const { id } = req.params;
+    const newDate = new Date(req.body.enrolledAt);
+
+    const enrollment = await prisma.enrollment.findUnique({ where: { id }, include: { course: true, lead: { select: { id: true, name: true } } } });
+    if (!enrollment) return res.status(404).json({ error: 'Enrollment not found' });
+
+    const isInternship = enrollment.course.courseId === 'INTERNSHIP';
+    const fyChanged = getFYCode(enrollment.enrolledAt) !== getFYCode(newDate);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      let studentCode = enrollment.studentCode;
+      if (fyChanged) {
+        await releaseStudentCode(tx, enrollment.studentCode);
+        studentCode = await nextStudentCode(tx, newDate, isInternship);
+      }
+      return tx.enrollment.update({ where: { id }, data: { enrolledAt: newDate, studentCode } });
+    });
+
+    await logActivity(enrollment.lead.id, req.user.id, 'ENROLLMENT_DATE_CORRECTED', {
+      studentName: enrollment.lead.name,
+      oldDate: enrollment.enrolledAt, newDate,
+      oldCode: enrollment.studentCode, newCode: updated.studentCode,
+    });
+
+    res.json(updated);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

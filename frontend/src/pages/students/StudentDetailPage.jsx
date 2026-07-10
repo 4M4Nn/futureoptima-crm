@@ -318,6 +318,8 @@ export default function StudentDetailPage() {
   const [cancelPayment, setCancelPayment] = useState(null);
   const [showAssignBatch, setShowAssignBatch] = useState(false);
   const [showRefund, setShowRefund] = useState(false);
+  const [editingEnrolledDate, setEditingEnrolledDate] = useState(false);
+  const [enrolledDateInput, setEnrolledDateInput] = useState('');
 
   const deleteEnrollmentMutation = useMutation({
     mutationFn: (force) => api.delete(`/enrollments/${id}${force ? '?confirm=true' : ''}`),
@@ -338,6 +340,21 @@ export default function StudentDetailPage() {
     mutationFn: ({ paymentId, reason }) => api.patch(`/payments/${paymentId}/cancel`, { reason }),
     onSuccess: () => { toast.success('Payment cancelled'); qc.invalidateQueries(['enrollment', id]); setCancelPayment(null); },
     onError: (e) => toast.error(e?.response?.data?.error || 'Cancel failed'),
+  });
+
+  const updateEnrolledDateMutation = useMutation({
+    mutationFn: (enrolledAt) => api.patch(`/enrollments/${id}/enrolled-date`, { enrolledAt }).then(r => r.data),
+    onSuccess: (updated) => {
+      if (enrollment?.studentCode && updated.studentCode !== enrollment.studentCode) {
+        toast.success(`Enrolled date updated — student number changed to ${updated.studentCode} (new financial year)`);
+      } else {
+        toast.success('Enrolled date updated!');
+      }
+      qc.invalidateQueries(['enrollment', id]);
+      qc.invalidateQueries(['enrollments']);
+      setEditingEnrolledDate(false);
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.message || 'Failed to update date'),
   });
 
   const { data: enrollment, isLoading } = useQuery({
@@ -532,14 +549,42 @@ export default function StudentDetailPage() {
                 ].map(([l, v]) => (
                   <div key={l}>
                     <div className="text-xs text-gray-400 font-medium">{l}</div>
-                    <div className="text-sm text-gray-800 font-medium mt-0.5 flex items-center gap-2">
-                      {v || '—'}
-                      {l === 'Batch' && (
-                        <button onClick={() => setShowAssignBatch(true)} className="text-xs text-primary-600 hover:underline font-medium">
-                          {enrollment.batchId ? 'Change' : 'Assign'}
+                    {l === 'Enrolled On' && editingEnrolledDate ? (
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <input
+                          type="date"
+                          className="input text-sm py-1"
+                          value={enrolledDateInput}
+                          max={new Date().toISOString().slice(0, 10)}
+                          onChange={e => setEnrolledDateInput(e.target.value)}
+                        />
+                        <button
+                          onClick={() => updateEnrolledDateMutation.mutate(new Date(enrolledDateInput).toISOString())}
+                          disabled={!enrolledDateInput || updateEnrolledDateMutation.isPending}
+                          className="text-xs text-green-600 hover:underline font-medium disabled:opacity-50"
+                        >
+                          {updateEnrolledDateMutation.isPending ? 'Saving...' : 'Save'}
                         </button>
-                      )}
-                    </div>
+                        <button onClick={() => setEditingEnrolledDate(false)} className="text-xs text-gray-400 hover:underline font-medium">Cancel</button>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-800 font-medium mt-0.5 flex items-center gap-2">
+                        {v || '—'}
+                        {l === 'Batch' && (
+                          <button onClick={() => setShowAssignBatch(true)} className="text-xs text-primary-600 hover:underline font-medium">
+                            {enrollment.batchId ? 'Change' : 'Assign'}
+                          </button>
+                        )}
+                        {l === 'Enrolled On' && isAdmin && (
+                          <button
+                            onClick={() => { setEnrolledDateInput(enrollment.enrolledAt ? enrollment.enrolledAt.slice(0, 10) : ''); setEditingEnrolledDate(true); }}
+                            className="text-xs text-primary-600 hover:underline font-medium"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
