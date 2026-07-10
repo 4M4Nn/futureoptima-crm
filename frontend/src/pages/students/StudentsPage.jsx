@@ -326,7 +326,7 @@ function ImportStudentsModal({ open, onClose }) {
               <span>
                 {summary.total} row(s) found — {summary.courseMatchedCount} matched a course
                 {summary.duplicateCount > 0 && `, ${summary.duplicateCount} already enrolled (skipped)`}
-                {summary.skipped > 0 && `, ${summary.skipped} skipped (missing date/name)`}
+                {summary.skipped > 0 && `, ${summary.skipped} skipped (missing date/name)`}. Enrolled date and course are editable per row before you register.
               </span>
               <button onClick={() => { setRows(null); setSummary(null); if (fileRef.current) fileRef.current.value = ''; }} className="text-primary-600 hover:underline flex-shrink-0">Choose different file</button>
             </div>
@@ -343,7 +343,15 @@ function ImportStudentsModal({ open, onClose }) {
                       <td className="px-3 py-2">
                         <input type="checkbox" checked={r.include} disabled={r.duplicate || !r.courseId} onChange={e => updateRow(i, { include: e.target.checked })} />
                       </td>
-                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDate(r.date)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <input
+                          type="date"
+                          value={r.date ? r.date.slice(0, 10) : ''}
+                          onChange={e => updateRow(i, { date: e.target.value ? new Date(e.target.value).toISOString() : r.date })}
+                          className="input text-xs py-1"
+                          max={new Date().toISOString().slice(0, 10)}
+                        />
+                      </td>
                       <td className="px-3 py-2 text-gray-700 max-w-[180px] truncate" title={r.name}>{r.name || '—'}{r.phone && <div className="text-xs text-gray-400">{r.phone}</div>}</td>
                       <td className="px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">{fmt(r.amount)}</td>
                       <td className="px-3 py-2">
