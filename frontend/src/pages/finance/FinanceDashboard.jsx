@@ -1,23 +1,90 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
-  TrendingUp, TrendingDown, DollarSign, Receipt, Users, AlertTriangle, Bot, RefreshCw,
+  TrendingUp, TrendingDown, DollarSign, Receipt, Users, AlertTriangle, Bot, RefreshCw, ArrowLeftRight,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend,
 } from 'recharts';
+import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
-import { LoadingState, StatCard } from '../../components/ui/index';
+import { LoadingState, StatCard, Modal, Input, Select } from '../../components/ui/index';
 
 const COLORS = ['#4f46e5', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#06B6D4', '#EC4899', '#F97316'];
 
 const METHOD_LABELS = { CASH: 'Cash', UPI: 'UPI', BANK_TRANSFER: 'Bank Transfer', CHEQUE: 'Cheque', CARD: 'Card', EMI: 'EMI' };
+const ACCOUNT_LABELS = { CASH: '💵 Cash', ICICI: '🏦 ICICI', IDFC: '🏦 IDFC', HDFC: '🏦 HDFC' };
+const ACCOUNT_OPTIONS = [
+  { value: 'CASH', label: 'Cash' }, { value: 'ICICI', label: 'ICICI Bank' },
+  { value: 'IDFC', label: 'IDFC Bank' }, { value: 'HDFC', label: 'HDFC Bank' },
+];
+
+function RecordTransferModal({ open, onClose }) {
+  const qc = useQueryClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({ fromAccount: 'ICICI', toAccount: 'HDFC', amount: '', transferDate: today, reason: '' });
+
+  const mutation = useMutation({
+    mutationFn: () => api.post('/finance/transfers', form).then(r => r.data),
+    onSuccess: () => {
+      toast.success('Transfer recorded!');
+      qc.invalidateQueries({ queryKey: ['finance-accounts'] });
+      qc.invalidateQueries({ queryKey: ['finance-transfers'] });
+      setForm({ fromAccount: 'ICICI', toAccount: 'HDFC', amount: '', transferDate: today, reason: '' });
+      onClose();
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.message || 'Failed to record transfer'),
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (form.fromAccount === form.toAccount) { toast.error('From and To accounts must be different'); return; }
+    if (!form.amount || Number(form.amount) <= 0) { toast.error('Enter a valid amount'); return; }
+    mutation.mutate();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Record Fund Transfer" size="md">
+      <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
+          For moving money between the institute's own accounts (e.g. replenishing HDFC). Not counted as income or expense.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <Select label="From Account *" value={form.fromAccount} onChange={v => setForm(f => ({ ...f, fromAccount: v }))} options={ACCOUNT_OPTIONS} />
+          <Select label="To Account *" value={form.toAccount} onChange={v => setForm(f => ({ ...f, toAccount: v }))} options={ACCOUNT_OPTIONS} />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Input label="Amount (₹) *" type="number" min="0.01" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="20000" />
+          <Input label="Date *" type="date" value={form.transferDate} onChange={e => setForm(f => ({ ...f, transferDate: e.target.value }))} />
+        </div>
+        <Input label="Reason" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="e.g. Replenish after direct HDFC expense" />
+        <div className="flex justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="submit" disabled={mutation.isPending} className="btn-primary">
+            {mutation.isPending ? 'Recording...' : <><ArrowLeftRight className="w-4 h-4" />Record Transfer</>}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 export default function FinanceDashboard() {
   const [insightsVisible, setInsightsVisible] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+
+  const { data: accounts } = useQuery({
+    queryKey: ['finance-accounts'],
+    queryFn: () => api.get('/finance/accounts').then(r => r.data),
+  });
+
+  const { data: transfers } = useQuery({
+    queryKey: ['finance-transfers'],
+    queryFn: () => api.get('/finance/transfers?limit=8').then(r => r.data),
+  });
 
   const { data: dash, isLoading } = useQuery({
     queryKey: ['finance-dashboard'],
@@ -179,6 +246,7 @@ export default function FinanceDashboard() {
             { label: '💵 Cash', value: d.bankWiseCollection?.cash || 0, border: 'border-green-500', text: 'text-green-600' },
             { label: '🏦 ICICI', value: d.bankWiseCollection?.icici || 0, border: 'border-orange-500', text: 'text-orange-600' },
             { label: '🏦 IDFC', value: d.bankWiseCollection?.idfc || 0, border: 'border-blue-500', text: 'text-blue-600' },
+            { label: '🏦 HDFC', value: d.bankWiseCollection?.hdfc || 0, border: 'border-purple-500', text: 'text-purple-600' },
           ].map(row => (
             <div key={row.label} className={`flex items-center justify-between pl-4 py-2 border-l-4 ${row.border}`}>
               <span className="text-sm font-medium text-gray-700">{row.label}</span>
@@ -190,6 +258,48 @@ export default function FinanceDashboard() {
             <span className="text-xl font-bold text-primary-900">{fmt(d.bankWiseCollection?.total || 0)}</span>
           </div>
         </div>
+      </div>
+
+      {/* Bank Account Balances & Transfers */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-gray-900">Bank Account Balances</h3>
+            <p className="text-xs text-gray-400">All-time income minus expenses, adjusted for transfers between accounts</p>
+          </div>
+          <button onClick={() => setShowTransferModal(true)} className="btn-secondary text-sm">
+            <ArrowLeftRight className="w-4 h-4" />Record Transfer
+          </button>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          {(accounts?.data || []).map(a => (
+            <div key={a.account} className="bg-gray-50 rounded-xl p-3">
+              <div className="text-xs text-gray-500">{ACCOUNT_LABELS[a.account] || a.account}</div>
+              <div className={`text-lg font-bold ${a.netBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>{fmt(a.netBalance)}</div>
+            </div>
+          ))}
+        </div>
+        {transfers?.data?.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-gray-500 mb-2">Recent Transfers</div>
+            <div className="space-y-1.5">
+              {transfers.data.map(t => (
+                <div key={t.id} className="flex items-center justify-between text-sm py-1.5 border-b border-gray-50 last:border-0">
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <span>{ACCOUNT_LABELS[t.fromAccount] || t.fromAccount}</span>
+                    <ArrowLeftRight className="w-3 h-3 text-gray-300" />
+                    <span>{ACCOUNT_LABELS[t.toAccount] || t.toAccount}</span>
+                    {t.reason && <span className="text-xs text-gray-400">— {t.reason}</span>}
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="font-semibold text-gray-900">{fmt(t.amount)}</span>
+                    <span className="text-xs text-gray-400">{fmtDate(t.transferDate)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tables Row */}
@@ -285,6 +395,8 @@ export default function FinanceDashboard() {
           )}
         </div>
       </div>
+
+      <RecordTransferModal open={showTransferModal} onClose={() => setShowTransferModal(false)} />
     </div>
   );
 }

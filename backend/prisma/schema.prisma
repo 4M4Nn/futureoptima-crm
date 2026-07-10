@@ -39,6 +39,7 @@ enum CourseId {
   AI_CYBERSECURITY
   PYTHON_FULLSTACK
   VIBE_CODING_SAAS
+  MERN_STACK
   DATA_ANALYTICS
   BUSINESS_ANALYTICS
   INTERNSHIP
@@ -152,6 +153,7 @@ model User {
   aiCommands   AICommand[]
   employeeProfiles Employee[]
   groupPayments GroupPayment[]
+  fundTransfers FundTransfer[]
 
   @@index([email])
   @@index([role])
@@ -544,6 +546,7 @@ model SystemSettings {
 model Expense {
   id            String   @id @default(cuid())
   category      String
+  subCategory   String?
   amount        Float
   date          DateTime
   paymentMethod String
@@ -554,6 +557,24 @@ model Expense {
   bankAccount   BankAccount @default(CASH)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+}
+
+// Money moved between the institute's own accounts (e.g. replenishing HDFC after a
+// direct expense, or moving reserves in/out for a loan). Not real income or spending,
+// so it's excluded from Income/Expense/P&L totals — it only shows on each account's
+// own transfer history.
+model FundTransfer {
+  id             String      @id @default(cuid())
+  fromAccount    BankAccount
+  toAccount      BankAccount
+  amount         Float
+  transferDate   DateTime    @default(now())
+  reason         String?
+  transferredById String
+  transferredBy  User        @relation(fields: [transferredById], references: [id])
+  createdAt      DateTime    @default(now())
+
+  @@index([transferDate])
 }
 
 model SalaryRecord {

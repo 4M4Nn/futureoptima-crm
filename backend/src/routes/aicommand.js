@@ -61,7 +61,7 @@ AI|artificial intelligence|automation|ai engineering -> AI_ENGINEERING
 data science|ml|machine learning -> DATA_SCIENCE_AI
 cyber|security|hacking|cybersecurity -> AI_CYBERSECURITY
 python|fullstack|full stack|web development -> PYTHON_FULLSTACK
-vibe|saas|no code|vibe coding -> VIBE_CODING_SAAS
+mern|mean|mearn stack|node|react|mongodb -> MERN_STACK
 data analytics|analytics|excel|power bi -> DATA_ANALYTICS
 business|mba|business analytics -> BUSINESS_ANALYTICS
 internship|intern -> INTERNSHIP

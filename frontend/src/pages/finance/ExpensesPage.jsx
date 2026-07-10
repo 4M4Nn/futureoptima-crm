@@ -7,19 +7,21 @@ import api from '../../utils/api';
 import { fmt, fmtDate } from '../../utils/constants';
 import { Modal, LoadingState, EmptyState, StatCard, ConfirmDialog } from '../../components/ui/index';
 
-const CATEGORIES = ['Salary', 'Marketing', 'Rent', 'Electricity', 'Internet', 'Software', 'Office', 'Travel', 'Miscellaneous'];
+const CATEGORIES = ['Salary', 'Rent', 'Marketing', 'Sales', 'Office Expense', 'Miscellaneous'];
+const SUBCATEGORIES = {
+  Marketing: ['Meta Ads', 'Google Ads', 'Other Marketing'],
+  Sales: ['B2B & Sales Expense', 'Incentive', 'TA/DA'],
+  'Office Expense': ['Administrative Cost', 'Stationary', 'Tea & Snacks', 'Team Outing', 'Electricity', 'Internet', 'Software'],
+};
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
 const BANK_ACCOUNTS = [{ value: 'HDFC', label: 'HDFC Bank' }, { value: 'ICICI', label: 'ICICI Bank' }, { value: 'IDFC', label: 'IDFC Bank' }, { value: 'CASH', label: 'Cash' }];
 
 const CAT_COLORS = {
   Salary: 'bg-blue-100 text-blue-700',
-  Marketing: 'bg-purple-100 text-purple-700',
   Rent: 'bg-orange-100 text-orange-700',
-  Electricity: 'bg-yellow-100 text-yellow-700',
-  Internet: 'bg-cyan-100 text-cyan-700',
-  Software: 'bg-indigo-100 text-indigo-700',
-  Office: 'bg-gray-100 text-gray-700',
-  Travel: 'bg-green-100 text-green-700',
+  Marketing: 'bg-purple-100 text-purple-700',
+  Sales: 'bg-cyan-100 text-cyan-700',
+  'Office Expense': 'bg-gray-100 text-gray-700',
   Miscellaneous: 'bg-pink-100 text-pink-700',
 };
 
@@ -34,7 +36,7 @@ export default function ExpensesPage() {
   const [from, setFrom] = useState(DEFAULT_FROM);
   const [to, setTo] = useState(DEFAULT_TO);
   const [filterCat, setFilterCat] = useState('');
-  const [form, setForm] = useState({ category: '', amount: '', date: DEFAULT_TO, paymentMethod: '', bankAccount: 'CASH', vendor: '', notes: '' });
+  const [form, setForm] = useState({ category: '', subCategory: '', amount: '', date: DEFAULT_TO, paymentMethod: '', bankAccount: 'CASH', vendor: '', notes: '' });
 
   const { data, isLoading } = useQuery({
     queryKey: ['expenses', from, to, filterCat],
@@ -48,9 +50,9 @@ export default function ExpensesPage() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['finance-dashboard'] });
       setShowModal(false);
-      setForm({ category: '', amount: '', date: DEFAULT_TO, paymentMethod: '', bankAccount: 'CASH', vendor: '', notes: '' });
+      setForm({ category: '', subCategory: '', amount: '', date: DEFAULT_TO, paymentMethod: '', bankAccount: 'CASH', vendor: '', notes: '' });
     },
-    onError: (err) => toast.error(err?.error || 'Failed to add expense'),
+    onError: (err) => toast.error(err?.response?.data?.error || err?.error || 'Failed to add expense'),
   });
 
   const deleteMutation = useMutation({
@@ -68,6 +70,9 @@ export default function ExpensesPage() {
     e.preventDefault();
     if (!form.category || !form.amount || !form.date || !form.paymentMethod || !form.bankAccount) {
       toast.error('Fill all required fields'); return;
+    }
+    if (SUBCATEGORIES[form.category] && !form.subCategory) {
+      toast.error('Select a sub-category'); return;
     }
     addMutation.mutate({ ...form, amount: parseFloat(form.amount) });
   };
@@ -158,6 +163,7 @@ export default function ExpensesPage() {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${CAT_COLORS[exp.category] || 'bg-gray-100 text-gray-700'}`}>
                           {exp.category}
                         </span>
+                        {exp.subCategory && <div className="text-xs text-gray-400 mt-0.5">{exp.subCategory}</div>}
                       </td>
                       <td className="px-4 py-3 text-gray-700">{exp.vendor || '—'}</td>
                       <td className="px-4 py-3 font-semibold text-red-600">{fmt(exp.amount)}</td>
@@ -196,11 +202,20 @@ export default function ExpensesPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Category *</label>
-              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="input" required>
+              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value, subCategory: '' }))} className="input" required>
                 <option value="">Select category</option>
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+            {SUBCATEGORIES[form.category] && (
+              <div>
+                <label className="label">Sub-Category *</label>
+                <select value={form.subCategory} onChange={e => setForm(f => ({ ...f, subCategory: e.target.value }))} className="input" required>
+                  <option value="">Select sub-category</option>
+                  {SUBCATEGORIES[form.category].map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="label">Amount (₹) *</label>
               <input type="number" min="0.01" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="input" placeholder="0.00" required />

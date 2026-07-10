@@ -23,11 +23,11 @@ const COURSE_MAP = {
   'python full stack with ai': 'PYTHON_FULLSTACK',
   'python fullstack': 'PYTHON_FULLSTACK',
   'fullstack': 'PYTHON_FULLSTACK',
-  'vibe coding': 'VIBE_CODING_SAAS',
-  'vibe coding & saas': 'VIBE_CODING_SAAS',
-  'vibe coding & saas development': 'VIBE_CODING_SAAS',
-  'saas': 'VIBE_CODING_SAAS',
-  'vibe': 'VIBE_CODING_SAAS',
+  'mern stack': 'MERN_STACK',
+  'mearn stack': 'MERN_STACK',
+  'mearn stack development': 'MERN_STACK',
+  'mern': 'MERN_STACK',
+  'mean stack': 'MERN_STACK',
   'data analytics': 'DATA_ANALYTICS',
   'analytics': 'DATA_ANALYTICS',
   'business analytics': 'BUSINESS_ANALYTICS',
@@ -41,7 +41,7 @@ function detectCourse(text) {
   if (lower.includes('ai') || lower.includes('artificial')) return 'AI_ENGINEERING';
   if (lower.includes('cyber')) return 'AI_CYBERSECURITY';
   if (lower.includes('python')) return 'PYTHON_FULLSTACK';
-  if (lower.includes('vibe') || lower.includes('saas')) return 'VIBE_CODING_SAAS';
+  if (lower.includes('mern') || lower.includes('mearn') || lower.includes('mean stack')) return 'MERN_STACK';
   if (lower.includes('analytics')) return 'DATA_ANALYTICS';
   if (lower.includes('business')) return 'BUSINESS_ANALYTICS';
   if (lower.includes('data')) return 'DATA_ANALYTICS';

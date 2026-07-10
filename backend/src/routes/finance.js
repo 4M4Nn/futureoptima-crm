@@ -59,7 +59,8 @@ router.get('/dashboard', async (req, res) => {
     const cash = bankAmt('CASH');
     const icici = bankAmt('ICICI');
     const idfc = bankAmt('IDFC');
-    const bankWiseCollection = { cash, icici, idfc, total: cash + icici + idfc };
+    const hdfc = bankAmt('HDFC');
+    const bankWiseCollection = { cash, icici, idfc, hdfc, total: cash + icici + idfc + hdfc };
 
     res.json({
       todayCollection: todayAgg._sum.amount || 0,
@@ -154,6 +155,7 @@ router.get('/collections', async (req, res) => {
 // POST /api/finance/expenses
 router.post('/expenses', [
   body('category').notEmpty(),
+  body('subCategory').optional({ checkFalsy: true }),
   body('amount').isFloat({ min: 0.01 }),
   body('date').isISO8601(),
   body('paymentMethod').notEmpty(),
@@ -161,12 +163,72 @@ router.post('/expenses', [
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
-    const { category, amount, date, paymentMethod, vendor, notes, bankAccount } = req.body;
+    const { category, subCategory, amount, date, paymentMethod, vendor, notes, bankAccount } = req.body;
     const expense = await prisma.expense.create({
-      data: { category, amount: parseFloat(amount), date: new Date(date), paymentMethod, vendor, notes, bankAccount: bankAccount || 'CASH', addedById: req.user.id },
+      data: { category, subCategory: subCategory || null, amount: parseFloat(amount), date: new Date(date), paymentMethod, vendor, notes, bankAccount: bankAccount || 'CASH', addedById: req.user.id },
       include: { addedBy: { select: { name: true } } },
     });
     res.status(201).json(expense);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/finance/transfers — money moved between the institute's own accounts
+// (e.g. replenishing HDFC after a direct expense). Not income or spending, so it's
+// kept out of Income/Expense/P&L; it only appears in bank account balances/history.
+router.post('/transfers', [
+  body('fromAccount').isIn(['HDFC', 'ICICI', 'IDFC', 'CASH']),
+  body('toAccount').isIn(['HDFC', 'ICICI', 'IDFC', 'CASH']),
+  body('amount').isFloat({ min: 0.01 }),
+  body('transferDate').isISO8601(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const { fromAccount, toAccount, amount, transferDate, reason } = req.body;
+    if (fromAccount === toAccount) return res.status(400).json({ error: 'From and To accounts must be different' });
+    const transfer = await prisma.fundTransfer.create({
+      data: { fromAccount, toAccount, amount: parseFloat(amount), transferDate: new Date(transferDate), reason: reason || null, transferredById: req.user.id },
+      include: { transferredBy: { select: { name: true } } },
+    });
+    res.status(201).json(transfer);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/finance/transfers
+router.get('/transfers', async (req, res) => {
+  try {
+    const { page = 1, limit = 25 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [data, total] = await Promise.all([
+      prisma.fundTransfer.findMany({
+        skip, take: parseInt(limit), orderBy: { transferDate: 'desc' },
+        include: { transferredBy: { select: { name: true } } },
+      }),
+      prisma.fundTransfer.count(),
+    ]);
+    res.json({ data, pagination: { page: parseInt(page), total, pages: Math.ceil(total / parseInt(limit)) } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/finance/accounts — net balance per bank account (income - expense +/- transfers)
+router.get('/accounts', async (req, res) => {
+  try {
+    const ACCOUNTS = ['HDFC', 'ICICI', 'IDFC', 'CASH'];
+    const [incomeAgg, expenseAgg, transfersInAgg, transfersOutAgg] = await Promise.all([
+      prisma.payment.groupBy({ by: ['bankAccount'], where: { isCancelled: false }, _sum: { amount: true } }),
+      prisma.expense.groupBy({ by: ['bankAccount'], _sum: { amount: true } }),
+      prisma.fundTransfer.groupBy({ by: ['toAccount'], _sum: { amount: true } }),
+      prisma.fundTransfer.groupBy({ by: ['fromAccount'], _sum: { amount: true } }),
+    ]);
+    const sumFor = (agg, key, value) => agg.find(a => a[key] === value)?._sum.amount || 0;
+    const data = ACCOUNTS.map(account => {
+      const totalIn = sumFor(incomeAgg, 'bankAccount', account);
+      const totalOut = sumFor(expenseAgg, 'bankAccount', account);
+      const transfersIn = sumFor(transfersInAgg, 'toAccount', account);
+      const transfersOut = sumFor(transfersOutAgg, 'fromAccount', account);
+      return { account, totalIn, totalOut, transfersIn, transfersOut, netBalance: totalIn - totalOut + transfersIn - transfersOut };
+    });
+    res.json({ data });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -458,7 +520,7 @@ router.get('/reports/pl', async (req, res) => {
     const totalIncome = incomeAgg._sum.amount || 0;
     const totalExpenses = expenseAgg._sum.amount || 0;
     const bankAmt = (key) => bankWiseAgg.find(b => b.bankAccount === key)?._sum.amount || 0;
-    const bankWiseIncome = { cash: bankAmt('CASH'), icici: bankAmt('ICICI'), idfc: bankAmt('IDFC') };
+    const bankWiseIncome = { cash: bankAmt('CASH'), icici: bankAmt('ICICI'), idfc: bankAmt('IDFC'), hdfc: bankAmt('HDFC') };
 
     res.json({
       totalIncome,
@@ -499,7 +561,7 @@ router.get('/reports/pending-fees', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-const EXPENSE_CATEGORY_ORDER = ['Marketing', 'Rent', 'Electricity', 'Internet', 'Salary', 'Software', 'Office', 'Travel', 'Miscellaneous'];
+const EXPENSE_CATEGORY_ORDER = ['Salary', 'Rent', 'Marketing', 'Sales', 'Office Expense', 'Miscellaneous'];
 
 function monthOverlapsRange(year, month, from, to) {
   const monthStart = new Date(year, month - 1, 1);
@@ -647,6 +709,7 @@ router.get('/reports/pl-excel', async (req, res) => {
     addTableSheet(wb, 'Expenses', [
       { header: 'Date', key: 'date', width: 14 },
       { header: 'Category', key: 'category', width: 16 },
+      { header: 'Sub Category', key: 'subCategory', width: 16 },
       { header: 'Vendor', key: 'vendor', width: 20 },
       { header: 'Amount', key: 'amount', width: 16, money: true },
       { header: 'Payment Method', key: 'method', width: 16 },
@@ -655,6 +718,7 @@ router.get('/reports/pl-excel', async (req, res) => {
     ], expenses.map(e => ({
       date: e.date ? new Date(e.date).toLocaleDateString('en-IN') : '',
       category: e.category,
+      subCategory: e.subCategory || '',
       vendor: e.vendor || '',
       amount: e.amount,
       method: e.paymentMethod,
@@ -843,7 +907,7 @@ router.get('/reports/expense-excel', async (req, res) => {
     ], expenses.map(e => ({
       date: e.date ? new Date(e.date).toLocaleDateString('en-IN') : '',
       category: e.category,
-      subCategory: '',
+      subCategory: e.subCategory || '',
       vendor: e.vendor || '',
       amount: e.amount,
       method: e.paymentMethod,

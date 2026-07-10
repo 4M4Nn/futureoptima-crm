@@ -21,7 +21,7 @@ const COURSE_COLORS = {
   DATA_SCIENCE_AI: 'bg-blue-100 text-blue-700',
   AI_CYBERSECURITY: 'bg-red-100 text-red-700',
   PYTHON_FULLSTACK: 'bg-green-100 text-green-700',
-  VIBE_CODING_SAAS: 'bg-pink-100 text-pink-700',
+  MERN_STACK: 'bg-pink-100 text-pink-700',
   DATA_ANALYTICS: 'bg-orange-100 text-orange-700',
   BUSINESS_ANALYTICS: 'bg-teal-100 text-teal-700',
 };

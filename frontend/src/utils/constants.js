@@ -3,10 +3,10 @@ export const COURSES = {
   DATA_SCIENCE_AI: 'Data Science with AI',
   AI_CYBERSECURITY: 'AI-Powered Cybersecurity',
   PYTHON_FULLSTACK: 'Python Full Stack with AI',
-  VIBE_CODING_SAAS: 'Vibe Coding & SaaS Dev',
-  DATA_ANALYTICS: 'Data Analytics',
+  MERN_STACK: 'Mearn Stack Development',
+  DATA_ANALYTICS: 'Data Analytics with AI',
   BUSINESS_ANALYTICS: 'Business Analytics',
-  INTERNSHIP: 'Internship Programme (1 Month)',
+  INTERNSHIP: 'Internship Programme (15 days - 1 month)',
 };
 
 export const LEAD_STATUSES = ['NEW','CONTACTED','QUALIFIED','DEMO_SCHEDULED','PROPOSAL_SENT','NEGOTIATION','WON','LOST','NURTURING'];

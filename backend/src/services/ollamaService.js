@@ -38,8 +38,8 @@ const COURSE_NAMES = {
   DATA_SCIENCE_AI: 'Data Science with AI',
   AI_CYBERSECURITY: 'AI-Powered Cybersecurity',
   PYTHON_FULLSTACK: 'Python Full Stack with AI',
-  VIBE_CODING_SAAS: 'Vibe Coding & SaaS Development',
-  DATA_ANALYTICS: 'Data Analytics',
+  MERN_STACK: 'Mearn Stack Development',
+  DATA_ANALYTICS: 'Data Analytics with AI',
   BUSINESS_ANALYTICS: 'Business Analytics',
 };
 

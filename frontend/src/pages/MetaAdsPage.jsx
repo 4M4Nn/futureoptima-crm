@@ -12,8 +12,8 @@ const COURSES = [
   { value: 'DATA_SCIENCE_AI', label: 'Data Science with AI' },
   { value: 'AI_CYBERSECURITY', label: 'AI-Powered Cybersecurity' },
   { value: 'PYTHON_FULLSTACK', label: 'Python Full Stack with AI' },
-  { value: 'VIBE_CODING_SAAS', label: 'Vibe Coding & SaaS Dev' },
-  { value: 'DATA_ANALYTICS', label: 'Data Analytics' },
+  { value: 'MERN_STACK', label: 'Mearn Stack Development' },
+  { value: 'DATA_ANALYTICS', label: 'Data Analytics with AI' },
   { value: 'BUSINESS_ANALYTICS', label: 'Business Analytics' },
 ];
 

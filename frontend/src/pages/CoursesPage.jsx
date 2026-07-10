@@ -9,16 +9,16 @@ import { fmt, fmtDate } from '../utils/constants';
 import { LoadingState, EmptyState, Modal, ConfirmDialog } from '../components/ui/index';
 import { useAuthStore } from '../store/authStore';
 
-const COURSE_ICONS = { AI_ENGINEERING: '🤖', DATA_SCIENCE_AI: '📊', AI_CYBERSECURITY: '🔐', PYTHON_FULLSTACK: '🐍', VIBE_CODING_SAAS: '🚀', DATA_ANALYTICS: '📈', BUSINESS_ANALYTICS: '💼' };
+const COURSE_ICONS = { AI_ENGINEERING: '🤖', DATA_SCIENCE_AI: '📊', AI_CYBERSECURITY: '🔐', PYTHON_FULLSTACK: '🐍', MERN_STACK: '🚀', DATA_ANALYTICS: '📈', BUSINESS_ANALYTICS: '💼' };
 const COURSE_COLORS = ['from-indigo-500 to-purple-600', 'from-blue-500 to-cyan-600', 'from-red-500 to-orange-600', 'from-green-500 to-teal-600', 'from-pink-500 to-rose-600', 'from-yellow-500 to-amber-600', 'from-slate-500 to-gray-600'];
-const COURSE_IDS = ['AI_ENGINEERING', 'DATA_SCIENCE_AI', 'AI_CYBERSECURITY', 'PYTHON_FULLSTACK', 'VIBE_CODING_SAAS', 'DATA_ANALYTICS', 'BUSINESS_ANALYTICS'];
+const COURSE_IDS = ['AI_ENGINEERING', 'DATA_SCIENCE_AI', 'AI_CYBERSECURITY', 'PYTHON_FULLSTACK', 'MERN_STACK', 'DATA_ANALYTICS', 'BUSINESS_ANALYTICS'];
 const COURSE_ID_LABELS = {
   AI_ENGINEERING: 'AI Engineering & Automation',
   DATA_SCIENCE_AI: 'Data Science with AI',
   AI_CYBERSECURITY: 'AI-Powered Cybersecurity',
   PYTHON_FULLSTACK: 'Python Full Stack with AI',
-  VIBE_CODING_SAAS: 'Vibe Coding & SaaS Dev',
-  DATA_ANALYTICS: 'Data Analytics',
+  MERN_STACK: 'Mearn Stack Development',
+  DATA_ANALYTICS: 'Data Analytics with AI',
   BUSINESS_ANALYTICS: 'Business Analytics',
 };
 const MODES = ['ONLINE', 'OFFLINE', 'HYBRID'];

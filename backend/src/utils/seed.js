@@ -39,19 +39,20 @@ async function main() {
 
   // Courses
   const courses = [
-    { courseId: 'AI_ENGINEERING', name: 'Professional AI Engineering & Automation Programme', shortName: 'AI Eng', duration: '6 months', totalHours: 360, fees: 75000, highlights: ['LLMs & Prompt Engineering', 'AI Agents & Automation', 'MLOps & Deployment', 'Real-world Projects'] },
-    { courseId: 'DATA_SCIENCE_AI', name: 'Data Science with AI', shortName: 'DS+AI', duration: '5 months', totalHours: 300, fees: 60000, highlights: ['Python & Statistics', 'Machine Learning', 'Deep Learning', 'Industry Projects'] },
-    { courseId: 'AI_CYBERSECURITY', name: 'AI-Powered Cybersecurity', shortName: 'AI CyberSec', duration: '4 months', totalHours: 240, fees: 65000, highlights: ['Ethical Hacking', 'AI Threat Detection', 'SOC Operations', 'Certifications'] },
-    { courseId: 'PYTHON_FULLSTACK', name: 'Python Full Stack with AI', shortName: 'Python FS', duration: '5 months', totalHours: 320, fees: 55000, highlights: ['Django & FastAPI', 'React Frontend', 'AI Integration', 'Cloud Deployment'] },
-    { courseId: 'VIBE_CODING_SAAS', name: 'Vibe Coding & SaaS Development', shortName: 'Vibe+SaaS', duration: '4 months', totalHours: 260, fees: 58000, highlights: ['No-Code + Code Hybrid', 'SaaS Architecture', 'Stripe Payments', 'Launch & Scale'] },
-    { courseId: 'DATA_ANALYTICS', name: 'Data Analytics', shortName: 'Data Analytics', duration: '3 months', totalHours: 180, fees: 35000, highlights: ['Excel & SQL', 'Power BI & Tableau', 'Python Analytics', 'Dashboards'] },
-    { courseId: 'BUSINESS_ANALYTICS', name: 'Business Analytics', shortName: 'Biz Analytics', duration: '3 months', totalHours: 180, fees: 38000, highlights: ['Business Intelligence', 'Forecasting', 'Data Storytelling', 'MBA-level Case Studies'] },
-    { courseId: 'INTERNSHIP', name: 'Internship Programme', shortName: 'Internship', duration: '1 month', totalHours: 160, fees: 15000, emiAvailable: false, maxInstallments: 1, highlights: ['Real project experience', 'Industry mentorship', 'Certificate on completion', 'Live project work'] },
+    { courseId: 'AI_ENGINEERING', name: 'Professional AI Engineering & Automation Programme', shortName: 'AI Eng', duration: '6 months', totalHours: 360, fees: 64000, highlights: ['LLMs & Prompt Engineering', 'AI Agents & Automation', 'MLOps & Deployment', 'Real-world Projects'] },
+    { courseId: 'DATA_SCIENCE_AI', name: 'Data Science with AI', shortName: 'DS+AI', duration: '5 months', totalHours: 300, fees: 53000, highlights: ['Python & Statistics', 'Machine Learning', 'Deep Learning', 'Industry Projects'] },
+    { courseId: 'AI_CYBERSECURITY', name: 'AI-Powered Cybersecurity', shortName: 'AI CyberSec', duration: '4 months', totalHours: 240, fees: 45000, highlights: ['Ethical Hacking', 'AI Threat Detection', 'SOC Operations', 'Certifications'] },
+    { courseId: 'PYTHON_FULLSTACK', name: 'Python Full Stack with AI', shortName: 'Python FS', duration: '5 months', totalHours: 320, fees: 42000, highlights: ['Django & FastAPI', 'React Frontend', 'AI Integration', 'Cloud Deployment'] },
+    { courseId: 'MERN_STACK', name: 'Mearn Stack Development', shortName: 'MERN Stack', duration: '4 months', totalHours: 260, fees: 44000, highlights: ['MongoDB & Express', 'React Frontend', 'Node.js APIs', 'Full Project Deployment'] },
+    { courseId: 'DATA_ANALYTICS', name: 'Data Analytics with AI', shortName: 'Data Analytics', duration: '3 months', totalHours: 180, fees: 46000, highlights: ['Excel & SQL', 'Power BI & Tableau', 'Python Analytics', 'Dashboards'] },
+    { courseId: 'BUSINESS_ANALYTICS', name: 'Business Analytics', shortName: 'Biz Analytics', duration: '3 months', totalHours: 180, fees: 20000, highlights: ['Business Intelligence', 'Forecasting', 'Data Storytelling', 'MBA-level Case Studies'] },
+    { courseId: 'INTERNSHIP', name: 'Internship Programme', shortName: 'Internship', duration: '15 days - 1 month', totalHours: 160, fees: 5000, emiAvailable: false, maxInstallments: 1, highlights: ['Real project experience', 'Industry mentorship', 'Certificate on completion', 'Live project work'] },
   ];
 
   for (const c of courses) {
-    await prisma.course.upsert({ where: { courseId: c.courseId }, update: {}, create: c });
+    await prisma.course.upsert({ where: { courseId: c.courseId }, update: c, create: c });
   }
+  await prisma.course.updateMany({ where: { courseId: 'VIBE_CODING_SAAS' }, data: { isActive: false } });
 
   // System settings
   const settings = [
