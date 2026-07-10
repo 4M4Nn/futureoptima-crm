@@ -8,7 +8,7 @@ import { fmt, fmtDate } from '../../utils/constants';
 import { Modal, LoadingState, EmptyState, StatCard, ConfirmDialog } from '../../components/ui/index';
 import { useAuthStore } from '../../store/authStore';
 
-const CATEGORIES = ['Salary', 'Rent', 'Marketing', 'Sales', 'Office Expense', 'Miscellaneous'];
+const CATEGORIES = ['Salary', 'Rent', 'Marketing', 'Sales', 'Office Expense', 'Refund', 'Miscellaneous'];
 const SUBCATEGORIES = {
   Marketing: ['Meta Ads', 'Google Ads', 'Other Marketing'],
   Sales: ['B2B & Sales Expense', 'Incentive', 'TA/DA'],
@@ -23,6 +23,7 @@ const CAT_COLORS = {
   Marketing: 'bg-purple-100 text-purple-700',
   Sales: 'bg-cyan-100 text-cyan-700',
   'Office Expense': 'bg-gray-100 text-gray-700',
+  Refund: 'bg-red-100 text-red-700',
   Miscellaneous: 'bg-pink-100 text-pink-700',
 };
 

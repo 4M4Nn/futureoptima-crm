@@ -678,7 +678,7 @@ router.get('/reports/pending-fees', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-const EXPENSE_CATEGORY_ORDER = ['Salary', 'Rent', 'Marketing', 'Sales', 'Office Expense', 'Miscellaneous'];
+const EXPENSE_CATEGORY_ORDER = ['Salary', 'Rent', 'Marketing', 'Sales', 'Office Expense', 'Refund', 'Miscellaneous'];
 
 function monthOverlapsRange(year, month, from, to) {
   const monthStart = new Date(year, month - 1, 1);

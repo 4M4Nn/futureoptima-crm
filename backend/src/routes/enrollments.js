@@ -434,6 +434,63 @@ router.patch('/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/enrollments/:id/refund — money paid back to a student (e.g. registered,
+// paid, then didn't join). Reduces the enrollment's paid/balance figures and logs
+// the outflow as an Expense (category: Refund) so it shows in the financial reports,
+// same as any other money leaving the institute.
+router.post('/:id/refund', authorize('SUPER_ADMIN', 'ADMIN'), [
+  body('amount').isFloat({ min: 0.01 }),
+  body('reason').trim().notEmpty(),
+  body('bankAccount').isIn(['HDFC', 'ICICI', 'IDFC', 'CASH']),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const { id } = req.params;
+    const { amount, reason, bankAccount, method, markDropped, date } = req.body;
+    const refundAmount = Number(amount);
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { id },
+      include: { lead: { select: { id: true, name: true } } },
+    });
+    if (!enrollment) return res.status(404).json({ error: 'Enrollment not found' });
+    if (refundAmount > enrollment.paidAmount + 1) {
+      return res.status(400).json({ error: `Refund amount (₹${refundAmount}) exceeds what this student has paid (₹${enrollment.paidAmount})` });
+    }
+
+    const refundDate = date ? new Date(date) : new Date();
+    const newPaid = Math.max(0, enrollment.paidAmount - refundAmount);
+    const newBalance = enrollment.netFee - newPaid;
+    const newStatus = newPaid <= 0 ? 'PENDING' : newBalance <= 0 ? 'PAID' : 'PARTIAL';
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.enrollment.update({
+        where: { id },
+        data: {
+          paidAmount: newPaid, balanceDue: newBalance, paymentStatus: newStatus,
+          ...(markDropped ? { status: 'DROPPED' } : {}),
+        },
+      });
+      const expense = await tx.expense.create({
+        data: {
+          category: 'Refund', amount: refundAmount, date: refundDate,
+          paymentMethod: method || 'Cash', vendor: enrollment.lead.name,
+          notes: `Refund to ${enrollment.lead.name} (${enrollment.receiptNo}) — ${reason}`,
+          bankAccount, addedById: req.user.id,
+        },
+      });
+      return { updated, expense };
+    });
+
+    await logActivity(enrollment.lead.id, req.user.id, 'REFUND_ISSUED', {
+      amount: refundAmount, reason, markDropped: !!markDropped,
+    });
+
+    res.json({ message: 'Refund processed', enrollment: result.updated, expense: result.expense });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
     const { id } = req.params;

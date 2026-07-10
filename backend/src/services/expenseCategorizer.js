@@ -4,6 +4,7 @@ import { prisma } from '../utils/prisma.js';
 // cases don't cost an API call.
 const CATEGORY_RULES = [
   { category: 'Salary', subCategory: null, keywords: ['salary', 'wages', 'payroll'] },
+  { category: 'Refund', subCategory: null, keywords: ['refund', 'money returned', 'fee returned'] },
   { category: 'Rent', subCategory: null, keywords: ['rent', 'lease'] },
   { category: 'Marketing', subCategory: 'Meta Ads', keywords: ['meta ads', 'facebook ads', 'instagram ads', 'fb ads'] },
   { category: 'Marketing', subCategory: 'Google Ads', keywords: ['google ads', 'adwords'] },
@@ -51,7 +52,7 @@ export async function matchEmployee(text) {
 const CATEGORY_GUIDE = 'Salary, Rent, Marketing (Meta Ads / Google Ads / Other Marketing), '
   + 'Sales (B2B & Sales Expense / Incentive / TA/DA), '
   + 'Office Expense (Administrative Cost / Stationary / Tea & Snacks / Team Outing / Electricity / Internet / Software), '
-  + 'Miscellaneous';
+  + 'Refund, Miscellaneous';
 
 // Classifies a batch of ambiguous rows in a single Groq call (cheaper and faster
 // than one call per row). Returns null (caller should fall back to Miscellaneous)

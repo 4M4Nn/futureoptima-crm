@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CreditCard, CheckCircle, GraduationCap, Bot, Loader2, Download, Award, Banknote, X, Trash2, Ban } from 'lucide-react';
+import { ArrowLeft, CreditCard, CheckCircle, GraduationCap, Bot, Loader2, Download, Award, Banknote, X, Trash2, Ban, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import { fmt, fmtDate, fmtDatetime } from '../../utils/constants';
 import { LoadingState, StatusBadge, Modal, Input, Select, ConfirmDialog, BankAccountPicker, BankAccountBadge } from '../../components/ui/index';
@@ -153,6 +153,75 @@ function PayFullModal({ open, onClose, enrollment }) {
   );
 }
 
+function RefundModal({ open, onClose, enrollment }) {
+  const qc = useQueryClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const initialForm = { amount: '', reason: '', bankAccount: 'CASH', date: today, markDropped: false };
+  const [form, setForm] = useState(initialForm);
+  const [done, setDone] = useState(null);
+
+  const mutation = useMutation({
+    mutationFn: () => api.post(`/enrollments/${enrollment.id}/refund`, form).then(r => r.data),
+    onSuccess: (data) => {
+      toast.success('Refund processed!');
+      qc.invalidateQueries(['enrollment', enrollment.id]);
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['finance-dashboard'] });
+      setDone(data);
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || e?.message || 'Refund failed'),
+  });
+
+  const handleClose = () => {
+    if (mutation.isPending) return;
+    setForm(initialForm);
+    setDone(null);
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Process Refund" size="md">
+      <div className="p-6 space-y-4">
+        {done ? (
+          <div className="text-center py-4 space-y-4">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">Refund Processed</h3>
+            <p className="text-gray-500 text-sm">{fmt(Number(form.amount))} refunded and logged as a Refund expense.</p>
+            <button onClick={handleClose} className="btn-secondary mx-auto">Close</button>
+          </div>
+        ) : (
+          <>
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-700">
+              Student has paid {fmt(enrollment?.paidAmount)} so far. This records money paid back to them and logs it as a
+              Refund expense so it shows in your financial reports.
+            </div>
+            <Input label="Refund Amount (₹) *" type="number" min="0.01" max={enrollment?.paidAmount} value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="500" />
+            <Input label="Reason *" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="e.g. Did not join after registration" />
+            <Input label="Date" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+            <BankAccountPicker label="Refunded From" value={form.bankAccount} onChange={v => setForm(f => ({ ...f, bankAccount: v }))} />
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={form.markDropped} onChange={e => setForm(f => ({ ...f, markDropped: e.target.checked }))} />
+              Mark this student as withdrawn / dropped
+            </label>
+            <div className="flex justify-end gap-3 pt-2">
+              <button className="btn-secondary" onClick={handleClose}>Cancel</button>
+              <button
+                className="btn-primary bg-red-600 hover:bg-red-700"
+                onClick={() => mutation.mutate()}
+                disabled={!form.amount || !form.reason.trim() || Number(form.amount) > (enrollment?.paidAmount || 0) || mutation.isPending}
+              >
+                {mutation.isPending ? 'Processing...' : <><RotateCcw className="w-4 h-4" />Process Refund</>}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function CertificateSection({ enrollment }) {
   const [certResult, setCertResult] = useState(null);
   const [loading, setLoading] = useState('');
@@ -248,6 +317,7 @@ export default function StudentDetailPage() {
   const [forceDeleteWarning, setForceDeleteWarning] = useState(null);
   const [cancelPayment, setCancelPayment] = useState(null);
   const [showAssignBatch, setShowAssignBatch] = useState(false);
+  const [showRefund, setShowRefund] = useState(false);
 
   const deleteEnrollmentMutation = useMutation({
     mutationFn: (force) => api.delete(`/enrollments/${id}${force ? '?confirm=true' : ''}`),
@@ -310,6 +380,11 @@ export default function StudentDetailPage() {
             <StatusBadge status={enrollment.status} />
             <StatusBadge status={enrollment.paymentStatus} />
           </div>
+          {isAdmin && enrollment.paidAmount > 0 && (
+            <button onClick={() => setShowRefund(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-xl transition-colors">
+              <RotateCcw className="w-3.5 h-3.5" />Refund
+            </button>
+          )}
           {isAdmin && (
             <button onClick={() => setShowDeleteEnrollment(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 border border-red-200 rounded-xl transition-colors">
               <Trash2 className="w-3.5 h-3.5" />Delete
@@ -558,6 +633,9 @@ export default function StudentDetailPage() {
       )}
       {showPayFull && (
         <PayFullModal open={showPayFull} onClose={() => setShowPayFull(false)} enrollment={enrollment} />
+      )}
+      {showRefund && (
+        <RefundModal open={showRefund} onClose={() => setShowRefund(false)} enrollment={enrollment} />
       )}
       <ConfirmDialog
         open={showDeleteEnrollment}
